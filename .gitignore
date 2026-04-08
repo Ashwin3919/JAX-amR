@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Output & generated files
+output/
+*.gif
+*.png
+*.mp4
+*.avi
+
+# VTK output
+*.vts
+*.vtu
+*.pvd
+
+# Checkpoints
+*.npz
+
+# JAX / XLA cache
+.jax_cache/
+/tmp/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
