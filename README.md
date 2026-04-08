@@ -100,21 +100,31 @@ PYTHONPATH=. python compare.py
 ```
 *Outputs:* Three plots in `output/comparison/` and a `summary.txt`.
 
-### 3. Run the AMR-Overlay (for ParaView)
-If you want to visualize refinement levels as boxes in ParaView:
+### 2. Run the AMR-Overlay (Adaptive Visualization)
+This model solves a full uniform grid and automatically "detects" the laser path using gradients.
 ```bash
-python runs/run_amr.py
+PYTHONPATH=. python runs/run_amr.py
 ```
-*Outputs:* `.vtu` and `.pvd` files in `output/amr/`.
+*Outputs:* `.vtk` files and a `snapshots.png` in `output/amr_overlay/`.
+
+### 3. Run the Performance Comparison
+... (existing comparison section) ...
 
 ---
 
-## 🧪 Testing
+## 🔘 Laser Modes
 
-The codebase includes verification for interpolation, grid injection, and differentiability.
-```bash
-PYTHONPATH=. pytest tests/test_amr.py
+You can toggle between a stationary pulse and a moving circular laser in `config/params.py`:
+
+```python
+# Stationary: Laser stays at (0.5, 0.5)
+LASER_MODE = "stationary"
+
+# Circular: Laser orbits the center (Period = 0.1s)
+LASER_MODE = "circular"
 ```
+
+The **AMR-Overlay** will automatically track the circular laser, while the **Composite JIT-AMR** provides the maximum speed for either mode.
 
 ---
 

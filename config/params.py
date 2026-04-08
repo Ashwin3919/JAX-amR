@@ -12,6 +12,7 @@ T_wall: float = 0.0     # Dirichlet BC value
 T_init: float = 0.0     # initial temperature
 
 # ── Laser source ─────────────────────────────────────────────────────────────
+LASER_MODE:  str   = "circular" # "stationary" or "circular"
 laser_cx:    float = 0.5
 laser_cy:    float = 0.5
 laser_sigma: float = 0.05
@@ -20,7 +21,7 @@ laser_power: float = 2500.0  # Reach ~450K
 # ── Time stepping ─────────────────────────────────────────────────────────────
 dt:          float = 1e-4    # Smaller dt for 1024-grid stability
 n_steps:     int   = 5000    # 5000 * 1e-4 = 0.5s total time
-save_every:  int   = 500
+save_every:  int   = 100     # Increased frequency (51 frames total)
 
 
 # ── AMR ──────────────────────────────────────────────────────────────────────
