@@ -1,0 +1,7 @@
+jax>=0.4.20
+jaxlib>=0.4.20
+numpy>=1.26
+matplotlib>=3.8
+imageio>=2.33
+Pillow>=10.0
+scipy>=1.11
