@@ -2,10 +2,10 @@
 import matplotlib.patches as mpatches
 
 LEVEL_STYLES = {
-    1: ("#4a90d9", 0.25, 0.5),   # (edgecolor, alpha, linewidth)
-    2: ("#7bed9f", 0.45, 0.7),
-    3: ("#ffa502", 0.65, 0.9),
-    4: ("#ff4757", 0.85, 1.1),
+    1: ("#ff4757", 0.4, 0.6),    # Red (Level 1 - Coarsest / Broad Tracking)
+    2: ("#00d8d6", 0.7, 1.0),    # Neon Blue (Level 2 - Focused)
+    3: ("#ffffff", 1.0, 1.5),    # White (Level 3 - Finest / Sharpest Focus)
+    4: ("#ffffff", 1.0, 2.0),    # White (Level 4 - if applicable)
 }
 
 
