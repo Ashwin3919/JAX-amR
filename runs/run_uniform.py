@@ -1,8 +1,8 @@
 """
-Uniform-grid driver (v1 path).
+Uniform-grid driver (Model 1).
 
 Usage:
-    python -m runs.run_uniform
+    PYTHONPATH=. python runs/run_uniform.py
 """
 import os
 import numpy as np
@@ -12,11 +12,12 @@ import config.params as p
 from solver.grid import build_grid, build_laser_source
 from solver.ops import apply_bc
 from solver.cn_step import make_cn_step_jit
-from ioutils.vtk_writer import write_mesh_vtk, write_scalar_vtk, write_pvd
-from ioutils.checkpoint import save_checkpoint
-from viz.snapshots import plot_snapshots
 from ioutils.vtk_writer import write_legacy_vtk, write_pvd
 from ioutils.checkpoint import save_checkpoint
+from viz.snapshots import plot_snapshots
+from viz.animate import create_animation, save_gif
+from analysis.metrics import Timer
+
 
 def run_uniform(Nx: int = None, Ny: int = None,
                 output_dir: str = "output/uniform",
@@ -36,12 +37,12 @@ def run_uniform(Nx: int = None, Ny: int = None,
     dy = p.Ly / (Ny - 1)
 
     X, Y = build_grid(Nx, Ny, p.Lx, p.Ly)
-    Q = build_laser_source(X, Y, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power)
     T = apply_bc(jnp.zeros((Nx, Ny)))
 
     step_fn = make_cn_step_jit(p.alpha, p.dt, dx, dy)
-    # Warm-up JIT
-    _ = step_fn(T, Q)
+    # Warm-up JIT with t=0
+    Q0 = build_laser_source(X, Y, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power, 0.0)
+    _ = step_fn(T, Q0)
 
     frames = [np.asarray(T)]
     times  = [0.0]
@@ -49,24 +50,27 @@ def run_uniform(Nx: int = None, Ny: int = None,
 
     with Timer() as timer:
         for step in range(n_steps):
+            t = step * p.dt
+            # Recalculate source for moving laser
+            Q = build_laser_source(X, Y, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power, t)
+            
             T = step_fn(T, Q)
-            t = (step + 1) * p.dt
+            t_next = (step + 1) * p.dt
 
             if (step + 1) % p.save_every == 0:
                 T_np = np.asarray(T)
                 frames.append(T_np)
-                times.append(t)
+                times.append(t_next)
 
             if save_vtk and p.vtk_every > 0 and (step + 1) % p.vtk_every == 0:
                 vtk_path = os.path.join(output_dir, f"temp_t{step+1:05d}.vtk")
                 write_legacy_vtk(vtk_path, np.asarray(X), np.asarray(Y), np.asarray(T), title=f"Uniform_t{step+1}")
-                pvd_entries.append((t, vtk_path))
-
+                pvd_entries.append((t_next, vtk_path))
 
             if p.checkpoint_every > 0 and (step + 1) % p.checkpoint_every == 0:
                 save_checkpoint(
                     os.path.join(output_dir, f"ckpt_{step+1:05d}.npz"),
-                    np.asarray(T), step + 1, t,
+                    np.asarray(T), step + 1, t_next,
                 )
 
     if save_vtk and pvd_entries:

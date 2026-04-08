@@ -1,3 +1,12 @@
+"""
+Composite JIT-AMR driver (Model 3).
+
+High-performance two-level solver (coarse + fine patch).
+Fully JIT-compilable and differentiable.
+
+Usage:
+    PYTHONPATH=. python runs/run_composite_amr.py
+"""
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -15,7 +24,7 @@ from analysis.metrics import Timer
 
 def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None, 
                    patch_bounds=None, laser_power=None, n_steps=None,
-                   return_frames=False, output_dir="output/amr", save_vtk=True):
+                   output_dir="output/amr", save_vtk=True):
     """
     Runs the composite grid simulation.
     Overrides config.params if arguments are provided.
@@ -42,14 +51,11 @@ def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
     dx_f = (px1 - px0) / (Nf_x - 1)
     dy_f = (py1 - py0) / (Nf_y - 1)
     
-    # 2. Pre-calculate Sources
-    Qc = build_laser_source(Xc, Yc, p.laser_cx, p.laser_cy, p.laser_sigma, laser_power)
-    Qf = build_laser_source(patch.Xf, patch.Yf, p.laser_cx, p.laser_cy, p.laser_sigma, laser_power)
-    
-    # 3. Initial state
+    # 2. Initial state
     Tc = jnp.full((Nc_x, Nc_y), p.T_init)
     Tp = jnp.full((Nf_x, Nf_y), p.T_init)
     
+    # 3. Output containers
     pvd_coarse = []
     pvd_patch = []
     frames = [np.asarray(Tc)]
@@ -59,16 +65,24 @@ def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
     n_chunks = n_steps // chunk_size
 
     @jax.jit
-    def run_chunk(state):
-        def body(s, _):
-            return composite_step(s[0], s[1], Qc, Qf, patch, p.alpha, p.dt, 
+    def run_chunk(state, t_start):
+        def body(carry, step_idx):
+            Tc_k, Tp_k = carry
+            t_curr = t_start + step_idx * p.dt
+            # Recalculate sources at each step inside JIT
+            Qc_k = build_laser_source(Xc, Yc, p.laser_cx, p.laser_cy, p.laser_sigma, laser_power, t_curr)
+            Qf_k = build_laser_source(patch.Xf, patch.Yf, p.laser_cx, p.laser_cy, p.laser_sigma, laser_power, t_curr)
+            
+            return composite_step(Tc_k, Tp_k, Qc_k, Qf_k, patch, p.alpha, p.dt, 
                                   dx_c, dy_c, dx_f, dy_f, p.T_wall), None
-        final_s, _ = lax.scan(body, state, None, length=chunk_size)
+        
+        final_s, _ = lax.scan(body, state, jnp.arange(chunk_size))
         return final_s
 
     with Timer() as timer:
         for i in range(n_chunks):
-            Tc, Tp = run_chunk((Tc, Tp))
+            t_chunk_start = i * chunk_size * p.dt
+            Tc, Tp = run_chunk((Tc, Tp), t_chunk_start)
             step = (i + 1) * chunk_size
             t = step * p.dt
             
@@ -135,4 +149,3 @@ if __name__ == "__main__":
     jnp.save("output/amr/composite_coarse.npy", Tc_final)
     jnp.save("output/amr/composite_patch.npy", Tp_final)
     print("Saved results to output/amr/")
-
