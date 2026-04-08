@@ -15,9 +15,8 @@ from solver.cn_step import make_cn_step_jit
 from ioutils.vtk_writer import write_mesh_vtk, write_scalar_vtk, write_pvd
 from ioutils.checkpoint import save_checkpoint
 from viz.snapshots import plot_snapshots
-from viz.animate import create_animation, save_gif
-from analysis.metrics import Timer
-
+from ioutils.vtk_writer import write_legacy_vtk, write_pvd
+from ioutils.checkpoint import save_checkpoint
 
 def run_uniform(Nx: int = None, Ny: int = None,
                 output_dir: str = "output/uniform",
@@ -44,11 +43,6 @@ def run_uniform(Nx: int = None, Ny: int = None,
     # Warm-up JIT
     _ = step_fn(T, Q)
 
-    # Write mesh once (topology never changes for uniform grid)
-    if save_vtk:
-        write_mesh_vtk(os.path.join(output_dir, "mesh_t0000.vts"),
-                       np.asarray(X), np.asarray(Y))
-
     frames = [np.asarray(T)]
     times  = [0.0]
     pvd_entries = []
@@ -64,9 +58,10 @@ def run_uniform(Nx: int = None, Ny: int = None,
                 times.append(t)
 
             if save_vtk and p.vtk_every > 0 and (step + 1) % p.vtk_every == 0:
-                vtk_path = os.path.join(output_dir, f"temp_t{step+1:05d}.vts")
-                write_scalar_vtk(vtk_path, np.asarray(T), t)
+                vtk_path = os.path.join(output_dir, f"temp_t{step+1:05d}.vtk")
+                write_legacy_vtk(vtk_path, np.asarray(X), np.asarray(Y), np.asarray(T), title=f"Uniform_t{step+1}")
                 pvd_entries.append((t, vtk_path))
+
 
             if p.checkpoint_every > 0 and (step + 1) % p.checkpoint_every == 0:
                 save_checkpoint(

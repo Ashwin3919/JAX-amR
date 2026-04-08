@@ -1,124 +1,88 @@
 """
-VTK writers for the heat-equation solver.
-
-Uniform grid:  StructuredGrid (.vts)  — mesh written once, scalars per step
-AMR grid:      UnstructuredGrid (.vtu) — mesh + scalars per step (topology changes)
-Collection:    .pvd file so ParaView sees a time series
+Legacy VTK writers for the heat-equation solver.
+Generates .vtk files (ASCII) instead of XML .vts/.vtu files.
 """
 import os
 import numpy as np
 
-
-# ── Uniform: mesh ─────────────────────────────────────────────────────────────
-
-def write_mesh_vtk(path: str, X: np.ndarray, Y: np.ndarray) -> None:
-    """Write StructuredGrid VTK containing only X/Y coordinates (written once)."""
-    Nx, Ny = X.shape
-    with open(path, "w") as f:
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian">\n')
-        f.write(f'  <StructuredGrid WholeExtent="0 {Nx-1} 0 {Ny-1} 0 0">\n')
-        f.write(f'    <Piece Extent="0 {Nx-1} 0 {Ny-1} 0 0">\n')
-        f.write("      <Points>\n")
-        f.write('        <DataArray type="Float32" NumberOfComponents="3" format="ascii">\n')
-        for i in range(Nx):
-            for j in range(Ny):
-                f.write(f"          {X[i, j]:.6f} {Y[i, j]:.6f} 0.0\n")
-        f.write("        </DataArray>\n")
-        f.write("      </Points>\n")
-        f.write("    </Piece>\n")
-        f.write("  </StructuredGrid>\n")
-        f.write("</VTKFile>\n")
-
-
-# ── Uniform: scalar per timestep ─────────────────────────────────────────────
-
-def write_scalar_vtk(path: str, T: np.ndarray, t: float) -> None:
-    """Write StructuredGrid VTK with Temperature PointData for one timestep."""
-    T = np.asarray(T)
-    Nx, Ny = T.shape
-    with open(path, "w") as f:
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian">\n')
-        f.write(f'  <StructuredGrid WholeExtent="0 {Nx-1} 0 {Ny-1} 0 0">\n')
-        f.write(f'    <Piece Extent="0 {Nx-1} 0 {Ny-1} 0 0">\n')
-        f.write('      <PointData Scalars="Temperature">\n')
-        f.write('        <DataArray type="Float32" Name="Temperature" format="ascii">\n')
-        for i in range(Nx):
-            for j in range(Ny):
-                f.write(f"          {T[i, j]:.6f}\n")
-        f.write("        </DataArray>\n")
-        f.write("      </PointData>\n")
-        f.write("    </Piece>\n")
-        f.write("  </StructuredGrid>\n")
-        f.write("</VTKFile>\n")
-
-
-# ── AMR: unstructured mesh + scalar per timestep ──────────────────────────────
-
-def write_amr_vtk(path: str, cells: list, t: float) -> None:
+def write_legacy_vtk(path: str, X: np.ndarray, Y: np.ndarray, T: np.ndarray, title="HeatMap") -> None:
     """
-    Write UnstructuredGrid VTK for AMR cells.
+    Writes a legacy VTK file (STRUCTURED_GRID) containing coordinates and scalar data.
+    """
+    T = np.asarray(T)
+    X = np.asarray(X)
+    Y = np.asarray(Y)
+    Nx, Ny = T.shape
+    n_points = Nx * Ny
 
-    cells : list of (x0, y0, x1, y1, level) tuples
-    Each cell becomes a VTK_QUAD (type 9) with 4 corner points.
-    CellData: AMRLevel (int), Temperature (float, cell-centre average — optional).
+    with open(path, "w") as f:
+        # Header
+        f.write("# vtk DataFile Version 3.0\n")
+        f.write(f"{title}\n")
+        f.write("ASCII\n")
+        f.write("DATASET STRUCTURED_GRID\n")
+        f.write(f"DIMENSIONS {Nx} {Ny} 1\n")
+
+        # Points (Coordinates)
+        f.write(f"POINTS {n_points} float\n")
+        # VTK expects points in (x, y, z) order, flat array
+        # meshgrid(indexing='ij') means we loop i then j
+        for j in range(Ny):
+            for i in range(Nx):
+                f.write(f"{X[i, j]:.6f} {Y[i, j]:.6f} 0.0\n")
+        
+        # Point Data (Temperature)
+        f.write(f"POINT_DATA {n_points}\n")
+        f.write("SCALARS Temperature float 1\n")
+        f.write("LOOKUP_TABLE default\n")
+        for j in range(Ny):
+            for i in range(Nx):
+                f.write(f"{T[i, j]:.6f}\n")
+
+def write_amr_legacy_vtk(path: str, cells: list, title="AMR") -> None:
+    """
+    Writes a legacy VTK file (UNSTRUCTURED_GRID) for AMR-overlay cells.
+    cells : list of (x0, y0, x1, y1, level)
     """
     n_cells = len(cells)
+    n_points = 4 * n_cells
+
     with open(path, "w") as f:
-        f.write('<?xml version="1.0"?>\n')
-        f.write('<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">\n')
-        f.write("  <UnstructuredGrid>\n")
-        f.write(f'    <Piece NumberOfPoints="{4 * n_cells}" NumberOfCells="{n_cells}">\n')
+        f.write("# vtk DataFile Version 3.0\n")
+        f.write(f"{title}\n")
+        f.write("ASCII\n")
+        f.write("DATASET UNSTRUCTURED_GRID\n")
 
         # Points
-        f.write("      <Points>\n")
-        f.write('        <DataArray type="Float32" NumberOfComponents="3" format="ascii">\n')
+        f.write(f"POINTS {n_points} float\n")
         for x0, y0, x1, y1, _ in cells:
-            f.write(f"          {x0:.6f} {y0:.6f} 0.0\n")
-            f.write(f"          {x1:.6f} {y0:.6f} 0.0\n")
-            f.write(f"          {x1:.6f} {y1:.6f} 0.0\n")
-            f.write(f"          {x0:.6f} {y1:.6f} 0.0\n")
-        f.write("        </DataArray>\n")
-        f.write("      </Points>\n")
+            f.write(f"{x0:.6f} {y0:.6f} 0.0\n")
+            f.write(f"{x1:.6f} {y0:.6f} 0.0\n")
+            f.write(f"{x1:.6f} {y1:.6f} 0.0\n")
+            f.write(f"{x0:.6f} {y1:.6f} 0.0\n")
 
         # Cells
-        f.write("      <Cells>\n")
-        f.write('        <DataArray type="Int32" Name="connectivity" format="ascii">\n')
+        # Each cell has 4 points. Total size = n_cells * (1 count + 4 indices)
+        f.write(f"CELLS {n_cells} {5 * n_cells}\n")
         for i in range(n_cells):
             b = 4 * i
-            f.write(f"          {b} {b+1} {b+2} {b+3}\n")
-        f.write("        </DataArray>\n")
-        f.write('        <DataArray type="Int32" Name="offsets" format="ascii">\n')
-        for i in range(1, n_cells + 1):
-            f.write(f"          {4 * i}\n")
-        f.write("        </DataArray>\n")
-        f.write('        <DataArray type="UInt8" Name="types" format="ascii">\n')
+            f.write(f"4 {b} {b+1} {b+2} {b+3}\n")
+        
+        f.write(f"CELL_TYPES {n_cells}\n")
         for _ in range(n_cells):
-            f.write("          9\n")   # VTK_QUAD
-        f.write("        </DataArray>\n")
-        f.write("      </Cells>\n")
+            f.write("9\n") # VTK_QUAD
 
-        # CellData
-        f.write("      <CellData>\n")
-        f.write('        <DataArray type="Int32" Name="AMRLevel" format="ascii">\n')
+        # Cell Data (AMRLevel)
+        f.write(f"CELL_DATA {n_cells}\n")
+        f.write("SCALARS AMRLevel int 1\n")
+        f.write("LOOKUP_TABLE default\n")
         for *_, level in cells:
-            f.write(f"          {level}\n")
-        f.write("        </DataArray>\n")
-        f.write("      </CellData>\n")
-
-        f.write("    </Piece>\n")
-        f.write("  </UnstructuredGrid>\n")
-        f.write("</VTKFile>\n")
-
-
-# ── PVD collection ────────────────────────────────────────────────────────────
+            f.write(f"{level}\n")
 
 def write_pvd(path: str, entries: list) -> None:
     """
     Write a ParaView Data (.pvd) collection file.
-
-    entries : list of (time: float, filepath: str)
+    ParaView can handle legacy .vtk inside a .pvd.
     """
     with open(path, "w") as f:
         f.write('<?xml version="1.0"?>\n')

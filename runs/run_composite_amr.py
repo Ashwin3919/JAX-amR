@@ -9,7 +9,7 @@ from solver.grid import build_grid, build_laser_source
 from amr.patch import build_patch_info, PatchInfo
 from amr.composite_step import composite_step
 
-from ioutils.vtk_writer import write_mesh_vtk, write_scalar_vtk, write_pvd
+from ioutils.vtk_writer import write_legacy_vtk, write_pvd
 from ioutils.checkpoint import save_checkpoint
 from analysis.metrics import Timer
 
@@ -50,11 +50,6 @@ def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
     Tc = jnp.full((Nc_x, Nc_y), p.T_init)
     Tp = jnp.full((Nf_x, Nf_y), p.T_init)
     
-    # VTK Mesh (topology)
-    if save_vtk:
-        write_mesh_vtk(os.path.join(output_dir, "coarse_mesh.vts"), np.asarray(Xc), np.asarray(Yc))
-        write_mesh_vtk(os.path.join(output_dir, "patch_mesh.vts"), np.asarray(patch.Xf), np.asarray(patch.Yf))
-
     pvd_coarse = []
     pvd_patch = []
     frames = [np.asarray(Tc)]
@@ -83,10 +78,10 @@ def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
             
             # 2. VTK output
             if save_vtk and p.vtk_every > 0 and step % p.vtk_every == 0:
-                c_path = os.path.join(output_dir, f"coarse_t{step:05d}.vts")
-                p_path = os.path.join(output_dir, f"patch_t{step:05d}.vts")
-                write_scalar_vtk(c_path, np.asarray(Tc), t)
-                write_scalar_vtk(p_path, np.asarray(Tp), t)
+                c_path = os.path.join(output_dir, f"coarse_t{step:05d}.vtk")
+                p_path = os.path.join(output_dir, f"patch_t{step:05d}.vtk")
+                write_legacy_vtk(c_path, np.asarray(Xc), np.asarray(Yc), np.asarray(Tc), title=f"Coarse_t{step}")
+                write_legacy_vtk(p_path, np.asarray(patch.Xf), np.asarray(patch.Yf), np.asarray(Tp), title=f"Patch_t{step}")
                 pvd_coarse.append((t, c_path))
                 pvd_patch.append((t, p_path))
 
