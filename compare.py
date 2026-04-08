@@ -54,21 +54,22 @@ from runs.run_composite_amr import run_simulation as run_composite_sim
 run_composite_sim_jit = jax.jit(run_composite_sim, static_argnums=(0,1,2,3,4,6))
 
 # COMPOSITE_CONFIGS: list of (Nc, Nf)
-COMP_CONFIGS = [(64, 128), (128, 256)]
+COMP_CONFIGS = [(128, 256), (256, 512)]
 
 # ── Output directory ──────────────────────────────────────────────────────────
 OUT = "output/comparison"
 os.makedirs(OUT, exist_ok=True)
 
 # ── Study parameters (keep fast; increase for publication quality) ────────────
-CONV_GRID_SIZES   = [64, 128, 256, 512] # resolutions for convergence study
-CONV_N_STEPS      = 100                # solver steps per convergence run
+CONV_GRID_SIZES   = [128, 256, 512, 1024] # resolutions for convergence study
+CONV_N_STEPS      = 50                 # Reduced steps for ultra-high-res speed
 TIMING_NX         = 128                # resolution for timing breakdown
 TIMING_WARMUP     = 5                  # JIT warm-up steps (discarded)
 TIMING_TRIALS     = 3                  # averaged timing trials
 TIMING_STEPS      = 50                 # steps per trial
-FRONTIER_N_STEPS  = 100                # steps for efficiency-frontier runs
-Nx_REF            = 1024               # High-res Reference resolution
+FRONTIER_N_STEPS  = 50                 # steps for efficiency-frontier runs
+Nx_REF            = 2048               # Extreme Reference resolution
+
 
 
 # ═════════════════════════════════════════════════════════════════════════════

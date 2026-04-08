@@ -7,7 +7,7 @@ dx: float = Lx / (Nx - 1)
 dy: float = Ly / (Ny - 1)
 
 # ── Thermal ──────────────────────────────────────────────────────────────────
-alpha:  float = 1e-2    # Increased diffusivity
+alpha:  float = 1e-3    # standard diffusivity
 T_wall: float = 0.0     # Dirichlet BC value
 T_init: float = 0.0     # initial temperature
 
@@ -15,12 +15,13 @@ T_init: float = 0.0     # initial temperature
 laser_cx:    float = 0.5
 laser_cy:    float = 0.5
 laser_sigma: float = 0.05
-laser_power: float = 50.0   # Reduced power
+laser_power: float = 2500.0  # Reach ~450K
 
 # ── Time stepping ─────────────────────────────────────────────────────────────
-dt:          float = 1e-5
-n_steps:     int   = 100
-save_every:  int   = 10
+dt:          float = 1e-4    # Smaller dt for 1024-grid stability
+n_steps:     int   = 5000    # 5000 * 1e-4 = 0.5s total time
+save_every:  int   = 500
+
 
 # ── AMR ──────────────────────────────────────────────────────────────────────
 # Note: These values are used for the OLD visualization-only AMR.

@@ -19,7 +19,8 @@ from viz.animate import create_animation, save_gif
 from analysis.metrics import Timer
 
 
-def run_uniform(output_dir: str = "output/uniform",
+def run_uniform(Nx: int = None, Ny: int = None,
+                output_dir: str = "output/uniform",
                 n_steps: int = None,
                 save_vtk: bool = True) -> dict:
     """
@@ -30,12 +31,16 @@ def run_uniform(output_dir: str = "output/uniform",
     os.makedirs(output_dir, exist_ok=True)
     if n_steps is None:
         n_steps = p.n_steps
+    Nx = Nx or p.Nx
+    Ny = Ny or p.Ny
+    dx = p.Lx / (Nx - 1)
+    dy = p.Ly / (Ny - 1)
 
-    X, Y = build_grid(p.Nx, p.Ny, p.Lx, p.Ly)
+    X, Y = build_grid(Nx, Ny, p.Lx, p.Ly)
     Q = build_laser_source(X, Y, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power)
-    T = apply_bc(jnp.zeros((p.Nx, p.Ny)))
+    T = apply_bc(jnp.zeros((Nx, Ny)))
 
-    step_fn = make_cn_step_jit(p.alpha, p.dt, p.dx, p.dy)
+    step_fn = make_cn_step_jit(p.alpha, p.dt, dx, dy)
     # Warm-up JIT
     _ = step_fn(T, Q)
 
@@ -73,14 +78,16 @@ def run_uniform(output_dir: str = "output/uniform",
         write_pvd(os.path.join(output_dir, "uniform.pvd"), pvd_entries)
 
     print(f"[uniform] {n_steps} steps | {timer.elapsed:.2f}s | "
-          f"peak T = {np.asarray(T).max():.2f} K")
+          f"peak T = {np.asarray(T).max():.4f} K")
 
     return dict(T_final=T, frames=frames, times=times, wallclock=timer.elapsed)
 
 
 if __name__ == "__main__":
-    res = run_uniform()
-    X, Y = build_grid(p.Nx, p.Ny, p.Lx, p.Ly)
+    Nx = 1024
+    print(f"Starting ultra-high-resolution UNIFORM simulation ({Nx}x{Nx})...")
+    res = run_uniform(Nx=Nx, Ny=Nx, n_steps=p.n_steps)
+    X, Y = build_grid(Nx, Nx, p.Lx, p.Ly)
 
     fig = plot_snapshots(res["frames"], X, Y, res["times"], title="Uniform Grid")
     fig.savefig("output/uniform/snapshots.png", dpi=150, bbox_inches="tight",
