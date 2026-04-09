@@ -1,109 +1,95 @@
-# JAX-AMR — Impulse Differentiable Solver
+# JAX-AMR
 
 **Author:** Ashwin Shirke
 
 ![AMR Snapshots](amr_snapshots.png)
 
+![AMR Animation](amr_animation.gif)
 
-A JAX implementation of the 2D heat equation with adaptive mesh refinement. Solves a moving Gaussian laser source using three different solver strategies, benchmarked against each other. The composite solver is fully differentiable — you can run `jax.grad` through the entire time loop.
-
----
-
-## What it does
-
-Simulates laser-material thermal interaction on a $[0,1]^2$ domain using the transient heat equation. The laser moves on a circular orbit and the goal is to resolve the sharp thermal gradient at the focus without wasting compute everywhere else.
-
-Three solver strategies are implemented:
-
-**Model 1 — Uniform Grid**
-A 1024×1024 single-resolution solver. Everything is resolved at the same spacing. Used as the reference.
-
-**Model 2 — AMR-Overlay**
-Same 1024×1024 solver, but after each save step the temperature field is analyzed with a gradient-based refinement detector that assigns cell levels (1–3) to a 16×16 macro-cell grid. The AMR is visualization and post-processing only — the PDE solve is unchanged.
-
-
-![AMR Animation](amr_animation.gif) 
-
-
-**Model 3 — Composite JIT-AMR**
-A coupled two-level solver. A 256×256 coarse grid covers the full domain. A 512×512 fine patch sits over the laser zone $[0.3, 0.7]^2$. Both grids advance together each step: the coarse grid provides boundary conditions for the fine patch via bilinear interpolation, and the fine solution is injected back into the coarse grid. The entire 100-step chunk is compiled with `lax.scan` under `@jax.jit`.
+JAX-AMR solves the 2D transient heat equation on a unit-square domain subject to a Gaussian laser source that moves on a circular orbit. Three solver architectures are implemented and benchmarked: a uniform 1024×1024 reference, a dynamic AMR solver that relocates a fine patch each step by tracking the gradient centroid of the coarse field, and a fixed-patch composite solver that pre-places the fine grid over the laser orbit. All three use Crank-Nicolson time integration with 5-point finite difference spatial discretization, implemented entirely in JAX. The composite solvers are fully differentiable end-to-end — `jax.grad` can be called through the entire time loop.
 
 ---
 
-## Benchmark (5000 steps, Apple M2 CPU)
+## Models
 
-| Model | Solve DOF | Adaptive solve? | Time | vs Uniform |
-| :--- | ---: | :--- | ---: | :--- |
-| Uniform | 1,048,576 | No | 147.02 s | — |
-| AMR-Overlay | 1,048,576 | **No** (visualization only) | 22.98 s | 6.4× faster |
-| Composite AMR | 327,680 | **Yes** | 31.60 s | 4.65× faster |
+| Model | Concept | DOF | Wallclock | Peak T | Error |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| Uniform | 1024×1024 full grid | 1,048,576 | 147.02 s | 118.7011 K | — |
+| AMR Dynamic | 128×128 coarse + 512×512 moving patch | 278,528 | 12.80 s | 117.3004 K | 1.18% |
+| AMR Fixed | 128×128 coarse + 512×512 at [0.25,0.75]² | 278,528 | 25.03 s | 118.7028 K | 0.0014% |
 
-Peak temperature: Uniform 118.7011 K, Composite 118.6312 K (< 0.06% error).
+Measured on Apple M2 CPU, 5000 steps, dt=1e-4 s. AMR Dynamic is 11.5× faster than uniform; AMR Fixed is 5.9× faster. Both AMR variants use 3.76× fewer degrees of freedom.
 
-AMR-Overlay solves on the same 1,048,576 DOF as uniform — no compute reduction. Its speed advantage is purely from writing compact AMR cell lists to VTK instead of dense 1M-point arrays. Composite AMR is the only model that genuinely reduces the number of points solved, with 3.2× fewer DOF and `lax.scan` batching 100 steps per XLA dispatch.
+The dynamic variant tracks the laser with no prior knowledge of its path. The fixed variant requires knowing the orbit in advance but achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step.
 
 ---
 
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Requirements: `jax>=0.4.20`, `jaxlib>=0.4.20`, `numpy>=1.26`, `matplotlib>=3.8`, `imageio>=2.33`, `Pillow>=10.0`, `scipy>=1.11`. No CUDA required.
 
 ---
 
 ## Running
 
 ```bash
-# Model 1 — uniform reference
+# Uniform reference (147 s)
 PYTHONPATH=. python runs/run_uniform.py
 
-# Model 2 — AMR-overlay
+# AMR Dynamic (12.8 s, 11.5x speedup)
 PYTHONPATH=. python runs/run_amr.py
 
-# Model 3 — composite JIT-AMR
+# AMR Fixed (25.0 s, 5.9x speedup)
 PYTHONPATH=. python runs/run_composite_amr.py
 ```
 
-Output goes to `output/uniform/`, `output/amr_overlay/`, `output/amr/`. Each directory contains `snapshots.png`, `animation.gif`, VTK files, and `.npz` checkpoints.
+Output goes to `output/uniform/`, `output/amr/`, and `output/amr_fixed/`. Each directory contains `snapshots.png`, `animation.gif`, VTK files, and `.npz` checkpoints.
 
-Laser mode (stationary or circular orbit) is toggled in `config/params.py`:
+### Grid overlay animations
 
-```python
-LASER_MODE = "circular"   # or "stationary"
+Pass `--plot-grid` to generate animations showing the mesh structure:
+
+```bash
+PYTHONPATH=. python runs/run_uniform.py --plot-grid       # 16x16 white cells, full domain
+PYTHONPATH=. python runs/run_amr.py --plot-grid           # 8x8 red coarse + 16x16 white fine, moving
+PYTHONPATH=. python runs/run_composite_amr.py --plot-grid # 8x8 red coarse + 16x16 white fine, fixed
 ```
 
 ---
 
 ## Differentiability
 
-The composite solver uses no Python conditionals or NumPy calls inside the JIT region. Every operation — the 5-point Laplacian, Dirichlet boundary enforcement, bilinear interpolation, fine-to-coarse injection, and the time loop itself via `lax.scan` — is pure `jnp`. This means:
+Every operation inside the JIT-compiled region is pure `jnp`: the 5-point Laplacian, Dirichlet BC enforcement, Gaussian laser source, bilinear interpolation, fine-to-coarse injection, gradient centroid detection, and the time loop via `lax.scan`. No Python conditionals. No NumPy calls. The computation from initial condition to final temperature is one continuous function that JAX can differentiate.
 
 ```python
-def peak_temperature(laser_power):
-    res = run_simulation(laser_power=laser_power)
-    return jnp.max(res["T_final"])
+import jax
+from runs.run_composite_amr import run_simulation
 
+def peak_temperature(laser_power):
+    res = run_simulation(
+        Nc_x=128, Nc_y=128, Nf_x=512, Nf_y=512,
+        patch_bounds=(0.25, 0.75, 0.25, 0.75),
+        laser_power=laser_power,
+        n_steps=500,
+        save_vtk=False
+    )
+    Tc, Tp = res["T_final"]
+    return jnp.max(Tp)
+
+# Exact gradient through all 500 time steps
 dT_dP = jax.grad(peak_temperature)(2500.0)
 ```
-
-The gradient flows back through 5,000 time steps exactly, not via finite differences.
 
 ---
 
 ## ParaView
 
-Open `output/amr/amr_coarse.pvd` and `output/amr/amr_patch.pvd` together to see the two-level grid overlaid.
-
----
-
-## Tests
-
-```bash
-PYTHONPATH=. pytest tests/test_amr.py
-```
+Open `output/amr/amr_coarse.pvd` and `output/amr/amr_patch.pvd` together to view the two-level grid. The patch VTK files store physical coordinates per frame, so the patch position animates correctly as it tracks the laser.
 
 ---
 

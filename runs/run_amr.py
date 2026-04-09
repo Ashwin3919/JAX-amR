@@ -35,12 +35,21 @@ def _coarse_cells(n, Lx=1.0, Ly=1.0):
             for i in range(n) for j in range(n)]
 
 
-def _bounds_to_cells(x0, x1, y0, y1, n_coarse=8):
+def _bounds_to_cells(x0, x1, y0, y1, n_coarse=8, n_fine=16):
     """
-    8×8 red coarse background + white fine-patch rectangle.
-    Shows: red = coarse solve everywhere, white box = where fine solve is this frame.
+    8×8 red coarse cells across full domain + 16×16 white fine cells inside the patch.
+    Makes the grid structure intuitive: red = coarse everywhere,
+    dense white grid = where the fine solve is happening this frame.
     """
-    return _coarse_cells(n_coarse) + [(float(x0), float(y0), float(x1), float(y1), 3)]
+    x0, x1, y0, y1 = float(x0), float(x1), float(y0), float(y1)
+    cells = _coarse_cells(n_coarse)
+    fw = (x1 - x0) / n_fine
+    fh = (y1 - y0) / n_fine
+    for i in range(n_fine):
+        for j in range(n_fine):
+            cells.append((x0 + i*fw, y0 + j*fh,
+                          x0 + (i+1)*fw, y0 + (j+1)*fh, 3))
+    return cells
 
 
 def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,

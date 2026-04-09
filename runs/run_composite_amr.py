@@ -34,12 +34,21 @@ def _coarse_cells(n, Lx=1.0, Ly=1.0):
             for i in range(n) for j in range(n)]
 
 
-def _bounds_to_cells(px0, px1, py0, py1, n_coarse=8):
+def _bounds_to_cells(px0, px1, py0, py1, n_coarse=8, n_fine=16):
     """
-    8×8 red coarse background + white fixed fine-patch rectangle.
-    Shows: red = coarse solve everywhere, white box = pre-placed fine zone.
+    8×8 red coarse cells across full domain + 16×16 white fine cells inside the patch.
+    Makes the grid structure intuitive: red = coarse everywhere,
+    dense white grid = the pre-placed fine zone (fixed, never moves).
     """
-    return _coarse_cells(n_coarse) + [(float(px0), float(py0), float(px1), float(py1), 3)]
+    px0, px1, py0, py1 = float(px0), float(px1), float(py0), float(py1)
+    cells = _coarse_cells(n_coarse)
+    fw = (px1 - px0) / n_fine
+    fh = (py1 - py0) / n_fine
+    for i in range(n_fine):
+        for j in range(n_fine):
+            cells.append((px0 + i*fw, py0 + j*fh,
+                          px0 + (i+1)*fw, py0 + (j+1)*fh, 3))
+    return cells
 
 
 def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
