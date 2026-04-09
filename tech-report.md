@@ -1,15 +1,19 @@
-# JAX-AMR: A Differentiable Adaptive Mesh Refinement Solver for 2D Thermal Simulation in JAX
+# JAX-amR: A Differentiable Adaptive Mesh Refinement Framework for PDEs/ODEs in JAX
 
 **Author:** Ashwin Shirke
 **Date:** April 2026
 **Hardware:** Apple M2 CPU
 **Repository:** JAX-amR
 
+
+![AMR Animation](animation_grid.gif)
 ---
 
 ## Abstract
 
-We present JAX-AMR, a fully differentiable two-level adaptive mesh refinement (AMR) solver for the 2D transient heat equation, implemented entirely in JAX. The physical problem is the thermal response of a unit-square domain to a moving Gaussian laser source on a circular orbit. Three solver architectures are designed, implemented, and benchmarked: a uniform 1024×1024 reference, a dynamically adaptive solver that tracks the gradient centroid each step, and a fixed-patch composite solver that pre-places a 512×512 fine grid over the laser orbit. All three share the same Crank-Nicolson time integration scheme with fixed-point iteration. The two AMR variants each use 3.76× fewer degrees of freedom (278,528 vs 1,048,576) than the uniform reference. The dynamic AMR solver achieves an 11.5× wallclock speedup (12.80 s vs 147.02 s) with 1.18% error in peak temperature; the fixed-patch variant achieves a 5.9× speedup (25.03 s vs 147.02 s) with 0.0014% error. Because every operation is pure `jnp`, the entire simulation — including 5,000 time steps, bilinear interpolation, and fine-to-coarse injection — is automatically differentiable via `jax.grad`.
+JAX-amR is a framework for fully differentiable two-level adaptive mesh refinement (AMR) of PDEs and ODEs, implemented entirely in JAX. The framework provides reusable primitives for coarse-to-fine interpolation, gradient-centroid patch tracking, thermal history preservation across patch relocations, and `lax.scan`-batched time loops — all without Python control flow inside the JIT boundary, keeping the entire computation graph differentiable.
+
+This report documents the framework through its example application: the 2D transient heat equation on a unit-square domain driven by a Gaussian laser on a circular orbit. Three solver architectures are implemented and benchmarked: a uniform 1024×1024 reference, a dynamically adaptive solver that tracks the gradient centroid each step, and a fixed-patch composite solver that pre-places a 512×512 fine grid over the known laser orbit. All three share Crank-Nicolson time integration with fixed-point iteration. The two AMR variants each use 3.76× fewer degrees of freedom (278,528 vs 1,048,576) than the uniform reference. The dynamic solver achieves an 11.5× wallclock speedup (12.80 s vs 147.02 s) with 1.18% error in peak temperature; the fixed-patch variant achieves a 5.9× speedup (25.03 s vs 147.02 s) with 0.0014% error. Because every operation is pure `jnp`, the entire simulation — 5,000 time steps, bilinear interpolation, fine-to-coarse injection — is automatically differentiable via `jax.grad`.
 
 ---
 
@@ -23,9 +27,16 @@ The naive approach — a uniform fine grid everywhere — resolves the full doma
 
 Adaptive mesh refinement (AMR) addresses this mismatch by concentrating resolution where gradients are large. Classical AMR codes maintain a hierarchy of dynamically created and destroyed patches, coarsening where error indicators fall and refining where they rise. This approach works well in serial C++ or Fortran codes but becomes problematic in modern accelerated computing environments where hardware efficiency requires static memory layouts, and where scientific use cases increasingly demand gradient-based optimization and sensitivity analysis through the simulation.
 
-### 1.2 What We Built
+### 1.2 What JAX-amR Is
 
-JAX-AMR is a Python implementation of AMR for the 2D heat equation that embraces the constraints of JAX's XLA compilation model rather than fighting them. The core contributions are:
+JAX-amR is a general framework for differentiable AMR of PDEs and ODEs. It is not a solver for a specific equation — it is a set of composable primitives that a user plugs their own spatial operator and source term into. The reusable layer lives in four modules:
+
+- `solver/` — grid builder, Crank-Nicolson step, BC enforcement (swap this layer for your PDE)
+- `amr/` — coarse↔fine bilinear interpolation, gradient centroid detection, patch reinitialization with history preservation
+- `viz/` — snapshot and animation rendering with optional mesh-overlay
+- `ioutils/` — legacy VTK writer, PVD index, checkpoint save/load
+
+The `runs/` directory contains the example application that exercises all framework layers: the 2D heat equation with a moving Gaussian laser. The core framework contributions are:
 
 1. A Crank-Nicolson solver with fixed-point iteration, expressed entirely in `jnp` operations and compiled via `@jax.jit`.
 2. A dynamic AMR solver that moves a fine patch each step by computing the gradient-magnitude-weighted centroid of the coarse field — a fully differentiable detection criterion.

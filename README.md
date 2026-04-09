@@ -1,12 +1,12 @@
-# JAX-AMR
+# JAX-amR : A Differentiable Adaptive Mesh Refinement for ODE/PDEs
 
 **Author:** Ashwin Shirke
 
-![AMR Snapshots](amr_snapshots.png)
-
 ![AMR Animation](amr_animation.gif)
 
-JAX-AMR solves the 2D transient heat equation on a unit-square domain subject to a Gaussian laser source that moves on a circular orbit. Three solver architectures are implemented and benchmarked: a uniform 1024×1024 reference, a dynamic AMR solver that relocates a fine patch each step by tracking the gradient centroid of the coarse field, and a fixed-patch composite solver that pre-places the fine grid over the laser orbit. All three use Crank-Nicolson time integration with 5-point finite difference spatial discretization, implemented entirely in JAX. The composite solvers are fully differentiable end-to-end — `jax.grad` can be called through the entire time loop.
+JAX-amR is a framework for differentiable adaptive mesh refinement (AMR) of PDEs and ODEs, built entirely on JAX. The core idea: concentrate spatial resolution where gradients are large, keep the rest coarse, and do it in a way that remains fully JIT-compilable and end-to-end differentiable via `jax.grad`.
+
+The reusable framework lives in `solver/`, `amr/`, `viz/`, and `ioutils/`. The `runs/` directory contains the example application: the 2D transient heat equation driven by a Gaussian laser on a circular orbit. Three solver strategies are benchmarked on this problem — a uniform reference, a dynamic AMR solver that tracks the gradient centroid each step, and a fixed-patch composite solver pre-placed over the laser orbit. All use Crank-Nicolson time integration with 5-point finite difference spatial discretization.
 
 ---
 
@@ -21,6 +21,25 @@ JAX-AMR solves the 2D transient heat equation on a unit-square domain subject to
 Measured on Apple M2 CPU, 5000 steps, dt=1e-4 s. AMR Dynamic is 11.5× faster than uniform; AMR Fixed is 5.9× faster. Both AMR variants use 3.76× fewer degrees of freedom.
 
 The dynamic variant tracks the laser with no prior knowledge of its path. The fixed variant requires knowing the orbit in advance but achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step.
+
+![AMR Snapshots](amr_snapshots.png)
+---
+
+## Framework Structure
+
+```
+solver/          # PDE-agnostic numerics: grid builder, Crank-Nicolson step, BC enforcement
+amr/             # AMR primitives: coarse↔fine interpolation, gradient centroid, patch reinit
+viz/             # Visualization: snapshots, animations, mesh-overlay rendering
+ioutils/         # I/O: legacy VTK writer, PVD index, checkpoint save/load
+runs/            # Example application (circular laser heat equation)
+  run_uniform.py         # Model 1 — 1024×1024 uniform reference
+  run_amr.py             # Model 2 — dynamic AMR, patch follows gradient centroid
+  run_composite_amr.py   # Model 3 — fixed-patch AMR, pre-placed over known orbit
+config/          # Physical and solver parameters (params.py)
+```
+
+To adapt JAX-amR to a different PDE: replace `solver/grid.py` and `solver/cn_step.py` with your own spatial operator and source term; the AMR layer in `amr/` is agnostic to the physics.
 
 ---
 
