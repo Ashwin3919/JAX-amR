@@ -28,13 +28,19 @@ from viz.snapshots import plot_snapshots
 from viz.animate import create_animation, save_gif
 
 
-def _bounds_to_cells(x0, x1, y0, y1):
+def _coarse_cells(n, Lx=1.0, Ly=1.0):
+    """n×n equal red cells covering the full domain — represents the coarse background grid."""
+    w, h = Lx / n, Ly / n
+    return [(i*w, j*h, (i+1)*w, (j+1)*h, 1)
+            for i in range(n) for j in range(n)]
+
+
+def _bounds_to_cells(x0, x1, y0, y1, n_coarse=8):
     """
-    Convert fine patch physical bounds into the cell-list format expected
-    by draw_amr_overlay: (x0, y0, x1, y1, level).
-    Level 3 = white rectangle (finest / most focused).
+    8×8 red coarse background + white fine-patch rectangle.
+    Shows: red = coarse solve everywhere, white box = where fine solve is this frame.
     """
-    return [(float(x0), float(y0), float(x1), float(y1), 3)]
+    return _coarse_cells(n_coarse) + [(float(x0), float(y0), float(x1), float(y1), 3)]
 
 
 def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,

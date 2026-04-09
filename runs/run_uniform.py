@@ -14,7 +14,6 @@ import config.params as p
 from solver.grid import build_grid, build_laser_source
 from solver.ops import apply_bc
 from solver.cn_step import make_cn_step_jit
-from amr.cells import build_amr_cells
 from ioutils.vtk_writer import write_legacy_vtk, write_pvd
 from ioutils.checkpoint import save_checkpoint
 from viz.snapshots import plot_snapshots
@@ -85,15 +84,13 @@ def run_uniform(Nx: int = None, Ny: int = None,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Uniform grid solver")
     parser.add_argument("--plot-grid", action="store_true",
-                        help="Also generate gradient-based AMR cell overlay animation")
+                        help="Also generate grid-structure overlay animation")
     args = parser.parse_args()
 
     Nx = 1024
     print(f"Starting ultra-high-resolution UNIFORM simulation ({Nx}x{Nx})...")
     res = run_uniform(Nx=Nx, Ny=Nx, n_steps=p.n_steps)
     X, Y = build_grid(Nx, Nx, p.Lx, p.Ly)
-    dx = p.Lx / (Nx - 1)
-    dy = p.Ly / (Nx - 1)
 
     # --- always: standard snapshots + animation ---
     fig = plot_snapshots(res["frames"], X, Y, res["times"], title="Uniform Grid")
@@ -105,22 +102,19 @@ if __name__ == "__main__":
     save_gif(anim, "output/uniform/animation.gif")
     print("Saved output/uniform/animation.gif")
 
-    # --- --plot-grid: gradient-based cell subdivision on each saved frame ---
+    # --- --plot-grid only: 16x16 equal white cells across the full domain ---
+    # Shows that resolution is the same everywhere — no coarse/fine distinction.
     if args.plot_grid:
-        # Build AMR cell lists from gradient magnitude at each frame.
-        # This shows WHERE the solver *would* need to refine if it were adaptive —
-        # useful as a reference against the actual adaptive model.
-        amr_frames = []
-        for T_np in res["frames"]:
-            cells, _ = build_amr_cells(
-                T_np, dx, dy, p.Lx, p.Ly,
-                p.MACRO, p.REFINE_TIERS, p.MAX_LEVEL,
-            )
-            amr_frames.append(cells)
+        n = 16
+        w = p.Lx / n
+        h = p.Ly / n
+        uniform_cells = [(i*w, j*h, (i+1)*w, (j+1)*h, 3)
+                         for i in range(n) for j in range(n)]
+        amr_frames = [uniform_cells] * len(res["frames"])
 
         fig3 = plot_snapshots(res["frames"], X, Y, res["times"],
                               amr_frames=amr_frames,
-                              title="Uniform Grid — gradient refinement indicator")
+                              title="Uniform Grid — same fine resolution everywhere")
         fig3.savefig("output/uniform/snapshots_grid.png", dpi=150,
                      bbox_inches="tight", facecolor="#0d0d0d")
         print("Saved output/uniform/snapshots_grid.png")
