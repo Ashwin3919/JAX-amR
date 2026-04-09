@@ -1,117 +1,127 @@
 """
-AMR driver (v2 path).
+True Adaptive AMR driver (Model 2).
 
-Full fine-grid solve in JAX; AMR grid built as numpy post-process overlay.
+Solves on a coarse base grid everywhere. Each step, the gradient-weighted
+centroid of T_coarse is computed and a fine patch of fixed shape (Nf x Nf)
+is centered there. The patch follows the laser automatically — no pre-defined
+location needed.
+
+The fine patch carries its own thermal state between steps. When the patch
+moves, old fine values are reused in the overlap region and fresh territory
+is initialised from the coarse grid.
 
 Usage:
-    python -m runs.run_amr
+    PYTHONPATH=. python runs/run_amr.py
 """
 import os
-import numpy as np
+import jax
 import jax.numpy as jnp
+from jax import lax
+import numpy as np
 
 import config.params as p
 from solver.grid import build_grid, build_laser_source
-from solver.ops import apply_bc
-from solver.cn_step import make_cn_step_jit
-from amr.cells import build_amr_cells
-from ioutils.vtk_writer import write_amr_legacy_vtk, write_pvd
-from ioutils.checkpoint import save_checkpoint
+from amr.adaptive_step import adaptive_step
+from amr.adaptive_patch import make_fine_coords
+from analysis.metrics import Timer
 from viz.snapshots import plot_snapshots
 from viz.animate import create_animation, save_gif
-from analysis.metrics import Timer
 
 
-def run_amr(Nx: int = None, Ny: int = None,
+def run_amr(Nc: int = 256, Nf: int = 512, half_w: float = 0.2,
             output_dir: str = "output/amr_overlay",
-            n_steps: int = None,
-            save_vtk: bool = True) -> dict:
+            n_steps: int = None) -> dict:
     """
-    Run the AMR-overlay heat solver and write VTK + checkpoint output.
+    True adaptive AMR solver.
 
-    Returns a dict with keys: T_final, frames, times, amr_frames, wallclock.
+    Parameters
+    ----------
+    Nc     : coarse grid resolution (Nc x Nc, full domain)
+    Nf     : fine patch resolution (Nf x Nf, fixed shape, dynamic location)
+    half_w : half-width of fine patch in physical units (patch = 2*half_w square)
     """
     os.makedirs(output_dir, exist_ok=True)
-    if n_steps is None:
-        n_steps = p.n_steps
-    Nx = Nx or p.Nx
-    Ny = Ny or p.Ny
-    dx = p.Lx / (Nx - 1)
-    dy = p.Ly / (Ny - 1)
+    n_steps = n_steps or p.n_steps
 
-    X, Y = build_grid(Nx, Ny, p.Lx, p.Ly)
-    T = apply_bc(jnp.zeros((Nx, Ny)))
+    dx_c = p.Lx / (Nc - 1)
+    dy_c = p.Ly / (Nc - 1)
+    Xc, Yc = build_grid(Nc, Nc, p.Lx, p.Ly)
 
-    step_fn = make_cn_step_jit(p.alpha, p.dt, dx, dy)
-    # Warm-up JIT with t=0
-    Q0 = build_laser_source(X, Y, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power, 0.0)
-    _ = step_fn(T, Q0)
+    # Initial coarse field
+    Tc = jnp.full((Nc, Nc), p.T_init)
 
-    tiers = p.REFINE_TIERS
-    frames     = [np.asarray(T)]
-    times      = [0.0]
-    amr_frames = []
-    pvd_entries = []
+    # Initial patch: centre on domain, full coarse interpolation
+    _Xf0, _Yf0, x0_init, x1_init, y0_init, y1_init = make_fine_coords(
+        jnp.array(0.5), jnp.array(0.5), half_w, Nf, Nf, p.Lx, p.Ly
+    )
+    Tp = jnp.full((Nf, Nf), p.T_init)
 
-    with Timer() as timer:
-        for step in range(n_steps):
-            t = step * p.dt
-            # Recalculate source for moving laser
-            Q = build_laser_source(X, Y, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power, t)
-            
-            T = step_fn(T, Q)
-            t_next = (step + 1) * p.dt
+    chunk_size = p.save_every
+    n_chunks = n_steps // chunk_size
 
-            if (step + 1) % p.save_every == 0:
-                T_np = np.asarray(T)
-                frames.append(T_np)
-                times.append(t_next)
-                cells, _ = build_amr_cells(T_np, dx, dy, p.Lx, p.Ly,
-                                           p.MACRO, tiers, p.MAX_LEVEL)
-                amr_frames.append(cells)
+    @jax.jit
+    def run_chunk(state, t_start):
+        Tc_k, Tp_k, x0_k, x1_k, y0_k, y1_k = state
 
-            if save_vtk and p.vtk_every > 0 and (step + 1) % p.vtk_every == 0:
-                T_np = np.asarray(T)
-                cells, _ = build_amr_cells(T_np, dx, dy, p.Lx, p.Ly,
-                                           p.MACRO, tiers, p.MAX_LEVEL)
-                vtk_path = os.path.join(output_dir, f"amr_t{step+1:05d}.vtk")
-                write_amr_legacy_vtk(vtk_path, cells, title=f"AMR_Overlay_t{step+1}")
-                pvd_entries.append((t_next, vtk_path))
+        def body(carry, step_idx):
+            Tc, Tp, x0, x1, y0, y1 = carry
+            t = t_start + step_idx * p.dt
 
-            if p.checkpoint_every > 0 and (step + 1) % p.checkpoint_every == 0:
-                save_checkpoint(
-                    os.path.join(output_dir, f"ckpt_{step+1:05d}.npz"),
-                    np.asarray(T), step + 1, t,
+            Qc = build_laser_source(
+                Xc, Yc, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power, t
+            )
+
+            def Q_fine_fn(Xf, Yf):
+                return build_laser_source(
+                    Xf, Yf, p.laser_cx, p.laser_cy, p.laser_sigma, p.laser_power, t
                 )
 
-    if save_vtk and pvd_entries:
-        write_pvd(os.path.join(output_dir, "amr_overlay.pvd"), pvd_entries)
+            Tc_new, Tp_new, x0_new, x1_new, y0_new, y1_new = adaptive_step(
+                Tc, Tp, x0, x1, y0, y1,
+                Qc, Q_fine_fn,
+                Xc, Yc, half_w,
+                Nc, Nc, Nf, Nf, p.Lx, p.Ly,
+                p.alpha, p.dt, dx_c, dy_c, p.T_wall,
+            )
+            return (Tc_new, Tp_new, x0_new, x1_new, y0_new, y1_new), None
 
-    print(f"[amr-overlay] {n_steps} steps | {timer.elapsed:.2f}s | "
-          f"peak T = {np.asarray(T).max():.4f} K")
+        final_state, _ = lax.scan(body, (Tc_k, Tp_k, x0_k, x1_k, y0_k, y1_k),
+                                  jnp.arange(chunk_size))
+        return final_state
 
-    return dict(T_final=T, frames=frames, times=times,
-                amr_frames=amr_frames, wallclock=timer.elapsed)
+    frames = [np.asarray(Tc)]
+    times = [0.0]
+    state = (Tc, Tp, x0_init, x1_init, y0_init, y1_init)
+
+    with Timer() as timer:
+        for i in range(n_chunks):
+            t_start = jnp.array(i * chunk_size * p.dt)
+            state = run_chunk(state, t_start)
+            Tc = state[0]
+            frames.append(np.asarray(Tc))
+            times.append(float((i + 1) * chunk_size * p.dt))
+
+    Tc_final = state[0]
+    print(f"[amr-adaptive] {n_steps} steps | {timer.elapsed:.2f}s | "
+          f"peak T = {np.asarray(Tc_final).max():.4f} K | "
+          f"DOF = {Nc*Nc} + {Nf*Nf} = {Nc*Nc + Nf*Nf:,}")
+
+    return dict(T_final=Tc_final, frames=frames, times=times, wallclock=timer.elapsed)
 
 
 if __name__ == "__main__":
-    Nx = 1024
-    print(f"Starting ultra-high-resolution AMR-OVERLAY simulation ({Nx}x{Nx})...")
-    res = run_amr(Nx=Nx, Ny=Nx, n_steps=p.n_steps)
-    X, Y = build_grid(Nx, Nx, p.Lx, p.Ly)
+    Nc, Nf = 256, 512
+    print(f"Starting TRUE ADAPTIVE AMR simulation "
+          f"(coarse={Nc}x{Nc}, moving fine patch={Nf}x{Nf})...")
+    res = run_amr(Nc=Nc, Nf=Nf)
 
-    # AMR frames start at save_every — align with frames (skip frame[0] = T_init)
-    amr_for_snap = res["amr_frames"] if res["amr_frames"] else None
-    frames_for_snap = res["frames"][1:] if amr_for_snap else res["frames"]
-    times_for_snap  = res["times"][1:]  if amr_for_snap else res["times"]
+    Xc, Yc = build_grid(Nc, Nc, p.Lx, p.Ly)
+    fig = plot_snapshots(res["frames"], Xc, Yc, res["times"],
+                         title=f"Adaptive AMR (Nc={Nc}, Nf={Nf}, tracking patch)")
+    fig.savefig("output/amr_overlay/snapshots.png", dpi=150,
+                bbox_inches="tight", facecolor="#0d0d0d")
+    print("Saved output/amr_overlay/snapshots.png")
 
-    fig = plot_snapshots(frames_for_snap, X, Y, times_for_snap,
-                         amr_frames=amr_for_snap,
-                         title="AMR Overlay")
-    fig.savefig("output/amr_overlay/snapshots.png", dpi=150, bbox_inches="tight",
-                facecolor="#0d0d0d")
-    print("Saved snapshots.png")
-
-    fig2, anim = create_animation(frames_for_snap, X, Y, times_for_snap, amr_frames=amr_for_snap)
+    fig2, anim = create_animation(res["frames"], Xc, Yc, res["times"])
     save_gif(anim, "output/amr_overlay/animation.gif")
-    print("Saved animation.gif")
+    print("Saved output/amr_overlay/animation.gif")
