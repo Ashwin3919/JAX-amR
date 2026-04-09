@@ -1,4 +1,4 @@
-# JAX-amR: A Differentiable Adaptive Mesh Refinement Framework for PDEs/ODEs in JAX
+# JAX-amR: A Differentiable Adaptive Mesh Refinement Solver for PDEs
 
 **Author:** Ashwin Shirke
 **Date:** April 2026
@@ -11,7 +11,7 @@
 
 ## Abstract
 
-JAX-amR is a framework for fully differentiable two-level adaptive mesh refinement (AMR) of PDEs and ODEs, implemented entirely in JAX. The framework provides reusable primitives for coarse-to-fine interpolation, gradient-centroid patch tracking, thermal history preservation across patch relocations, and `lax.scan`-batched time loops — all without Python control flow inside the JIT boundary, keeping the entire computation graph differentiable.
+JAX-amR is a framework for fully differentiable two-level adaptive mesh refinement (AMR) of PDEs, implemented entirely in JAX. The framework provides reusable primitives for coarse-to-fine interpolation, gradient-centroid patch tracking, thermal history preservation across patch relocations, and `lax.scan`-batched time loops — all without Python control flow inside the JIT boundary, keeping the entire computation graph differentiable.
 
 This report documents the framework through its example application: the 2D transient heat equation on a unit-square domain driven by a Gaussian laser on a circular orbit. Three solver architectures are implemented and benchmarked: a uniform 1024×1024 reference, a dynamically adaptive solver that tracks the gradient centroid each step, and a fixed-patch composite solver that pre-places a 512×512 fine grid over the known laser orbit. All three share Crank-Nicolson time integration with fixed-point iteration. The two AMR variants each use 3.76× fewer degrees of freedom (278,528 vs 1,048,576) than the uniform reference. The dynamic solver achieves an 11.5× wallclock speedup (12.80 s vs 147.02 s) with 1.18% error in peak temperature; the fixed-patch variant achieves a 5.9× speedup (25.03 s vs 147.02 s) with 0.0014% error. Because every operation is pure `jnp`, the entire simulation — 5,000 time steps, bilinear interpolation, fine-to-coarse injection — is automatically differentiable via `jax.grad`.
 
@@ -29,7 +29,7 @@ Adaptive mesh refinement (AMR) addresses this mismatch by concentrating resoluti
 
 ### 1.2 What JAX-amR Is
 
-JAX-amR is a general framework for differentiable AMR of PDEs and ODEs. It is not a solver for a specific equation — it is a set of composable primitives that a user plugs their own spatial operator and source term into. The reusable layer lives in four modules:
+JAX-amR is a general framework for differentiable AMR of PDEs. It is not a solver for a specific equation — it is a set of composable primitives that a user plugs their own spatial operator and source term into. The reusable layer lives in four modules:
 
 - `solver/` — grid builder, Crank-Nicolson step, BC enforcement (swap this layer for your PDE)
 - `amr/` — coarse↔fine bilinear interpolation, gradient centroid detection, patch reinitialization with history preservation

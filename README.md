@@ -1,10 +1,10 @@
-# JAX-amR : A Differentiable Adaptive Mesh Refinement Solver for ODE/PDEs
+# JAX-amR : A Differentiable Adaptive Mesh Refinement Solver for PDEs
 
 **Author:** Ashwin Shirke
 
 ![AMR Animation](amr_animation.gif)
 
-JAX-amR is a framework for differentiable adaptive mesh refinement (AMR) solver of PDEs and ODEs, built entirely on JAX. The core idea: concentrate spatial resolution where gradients are large, keep the rest coarse, and do it in a way that remains fully JIT-compilable and end-to-end differentiable via `jax.grad`.
+JAX-amR is a framework for differentiable adaptive mesh refinement (AMR) solver of PDEs, built entirely on JAX. The core idea: concentrate spatial resolution where gradients are large, keep the rest coarse, and do it in a way that remains fully JIT-compilable and end-to-end differentiable via `jax.grad`.
 
 The reusable framework lives in `solver/`, `amr/`, `viz/`, and `ioutils/`. The `runs/` directory contains the example application: the 2D transient heat equation driven by a Gaussian laser on a circular orbit. Three solver strategies are benchmarked on this problem — a uniform reference, a dynamic AMR solver that tracks the gradient centroid each step, and a fixed-patch composite solver pre-placed over the laser orbit. All use Crank-Nicolson time integration with 5-point finite difference spatial discretization.
 
