@@ -44,7 +44,7 @@ The `runs/` directory contains the example application that exercises all framew
 4. A solution to the static-shape problem: patch location is represented as traced JAX scalars, so the patch moves without triggering recompilation.
 5. End-to-end differentiability: `jax.grad(peak_temperature)(laser_power)` returns exact gradients through the entire time evolution.
 
-### 1.3 Paper Organization
+### 1.3 Report Organization
 
 Section 2 gives the mathematical formulation. Section 3 derives the numerical scheme and argues for Crank-Nicolson over explicit methods. Section 4 explains the four JAX features that make this architecture possible. Section 5 analyzes the static-shape constraint and how it is resolved. Section 6 discusses differentiability. Section 7 describes each solver architecture in detail. Section 8 presents performance results and analysis. Section 9 discusses limitations and future work. Section 10 is the replication guide.
 
