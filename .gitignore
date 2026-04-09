@@ -21,8 +21,8 @@ ENV/
 
 # Output & generated files
 output/
-#.gif
-#*.png
+*.gif
+*.png
 *.mp4
 *.avi
 
