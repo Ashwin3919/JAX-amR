@@ -7,6 +7,7 @@
 
 
 ![AMR Animation](animation_grid.gif)
+<!-- Image stored at docs/animation_grid.gif -->
 ---
 
 ## Abstract
@@ -31,7 +32,7 @@ Adaptive mesh refinement (AMR) addresses this mismatch by concentrating resoluti
 
 JAX-amR is a general framework for differentiable AMR of PDEs. It is not a solver for a specific equation — it is a set of composable primitives that a user plugs their own spatial operator and source term into. The reusable layer lives in four modules:
 
-- `solver/` — grid builder, Crank-Nicolson step, BC enforcement (swap this layer for your PDE)
+- `solver/` — grid builder, Crank-Nicolson step, BC enforcement, laser source (swap this layer for your PDE; `laser_source.py` is the only application-specific file here)
 - `amr/` — coarse↔fine bilinear interpolation, gradient centroid detection, patch reinitialization with history preservation
 - `viz/` — snapshot and animation rendering with optional mesh-overlay
 - `ioutils/` — legacy VTK writer, PVD index, checkpoint save/load
@@ -398,7 +399,7 @@ build_grid(1024, 1024)
 4. Advance coarse grid: `T_coarse_new = cn_step(T_coarse, Q_coarse, ...)`.
 5. Interpolate coarse boundary conditions for fine patch: `T_boundary = coarse_to_fine(T_coarse_new, Xf, Yf, ...)`.
 6. Compute fine-patch source: `Q_fine = build_laser_source(Xf, Yf, ..., t)`.
-7. Advance fine patch with coarse-derived BCs: `T_patch_new = _patch_cn_step(T_patch, Q_fine, T_boundary, ...)`.
+7. Advance fine patch with coarse-derived BCs: `T_patch_new = patch_cn_step(T_patch, Q_fine, T_boundary, ...)`.
 8. Inject fine solution back into coarse: `T_coarse_final = fine_to_coarse(T_coarse_new, T_patch_new, ...)`.
 
 **`lax.scan` structure:**
@@ -556,13 +557,13 @@ No CUDA required. Tested on Apple M2 with the JAX CPU backend. JAX auto-detects 
 
 ```bash
 # Model 1: Uniform reference (147 s, gold standard)
-PYTHONPATH=. python runs/run_uniform.py
+python runs/run_uniform.py
 
 # Model 2: AMR Dynamic (12.8 s, 11.5x speedup)
-PYTHONPATH=. python runs/run_amr.py
+python runs/run_amr.py
 
 # Model 3: AMR Fixed (25.0 s, 5.9x speedup)
-PYTHONPATH=. python runs/run_composite_amr.py
+python runs/run_composite_amr.py
 ```
 
 Output directories:
@@ -576,18 +577,28 @@ Pass `--plot-grid` to generate animations showing the grid structure:
 
 ```bash
 # Uniform: 16x16 white cells (uniform resolution everywhere)
-PYTHONPATH=. python runs/run_uniform.py --plot-grid
+python runs/run_uniform.py --plot-grid
 
 # AMR Dynamic: 8x8 red coarse cells + 16x16 white fine cells tracking laser
-PYTHONPATH=. python runs/run_amr.py --plot-grid
+python runs/run_amr.py --plot-grid
 
 # AMR Fixed: 8x8 red coarse cells + 16x16 white fine cells at [0.25, 0.75]^2
-PYTHONPATH=. python runs/run_composite_amr.py --plot-grid
+python runs/run_composite_amr.py --plot-grid
 ```
+
+> **Note on grid overlay accuracy.** The cell boundaries drawn in `--plot-grid` mode are a
+> schematic representation of the AMR hierarchy, not a pixel-accurate projection of the
+> actual computational grid. The true simulation grids are 128×128 (coarse) and 512×512
+> (fine) — rendering them at full fidelity over the temperature field would produce a
+> visually impenetrable image. The overlay instead uses a coarsened proxy (8×8 coarse,
+> 16×16 fine) that faithfully conveys the *structure* — which region is resolved at which
+> level, and how the dynamic patch tracks the laser — while keeping the heatmap readable.
+> All performance figures, error metrics, and simulation outputs are produced by the full
+> resolution grids; the overlay has no effect on the numerics.
 
 ### 10.4 Key Configuration
 
-Physical and numerical parameters are in `config/params.py`:
+Physical and numerical parameters are in `src/config/params.py`:
 
 ```python
 LASER_MODE  = "circular"   # "stationary" or "circular"
@@ -605,8 +616,9 @@ For AMR Fixed, the patch bounds must contain the full laser orbit. The circular 
 ### 10.5 Differentiability Example
 
 ```python
+import sys; sys.path.insert(0, "src"); sys.path.insert(0, "runs")
 import jax
-from runs.run_composite_amr import run_simulation
+from run_composite_amr import run_simulation
 
 def peak_temperature(laser_power):
     res = run_simulation(

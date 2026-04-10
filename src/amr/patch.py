@@ -1,3 +1,4 @@
+from __future__ import annotations
 import jax.numpy as jnp
 from typing import NamedTuple
 from amr.interpolate import bilinear_interp
@@ -20,7 +21,15 @@ class PatchInfo(NamedTuple):
     Yc: jnp.ndarray
     mask: jnp.ndarray
 
-def build_patch_info(x0, x1, y0, y1, Nf_x, Nf_y, Nc_x, Nc_y, Lx, Ly):
+def build_patch_info(x0: float, x1: float, y0: float, y1: float,
+                     Nf_x: int, Nf_y: int, Nc_x: int, Nc_y: int,
+                     Lx: float, Ly: float) -> PatchInfo:
+    if not (0.0 <= x0 < x1 <= Lx):
+        raise ValueError(f"build_patch_info: invalid x bounds [{x0}, {x1}] for Lx={Lx}")
+    if not (0.0 <= y0 < y1 <= Ly):
+        raise ValueError(f"build_patch_info: invalid y bounds [{y0}, {y1}] for Ly={Ly}")
+    if Nf_x < 2 or Nf_y < 2 or Nc_x < 2 or Nc_y < 2:
+        raise ValueError(f"build_patch_info: all grid sizes must be >= 2")
     # Fine grid coordinates
     xf = jnp.linspace(x0, x1, Nf_x)
     yf = jnp.linspace(y0, y1, Nf_y)
@@ -41,11 +50,11 @@ def build_patch_info(x0, x1, y0, y1, Nf_x, Nf_y, Nc_x, Nc_y, Lx, Ly):
         Xf=Xf, Yf=Yf, Xc=Xc, Yc=Yc, mask=mask
     )
 
-def interpolate_coarse_to_fine(patch: PatchInfo, T_coarse):
+def interpolate_coarse_to_fine(patch: PatchInfo, T_coarse: jnp.ndarray) -> jnp.ndarray:
     """Interpolates coarse solution to the fine patch grid."""
     return bilinear_interp(T_coarse, patch.Xf, patch.Yf, patch.Lx, patch.Ly, patch.Nc_x, patch.Nc_y)
 
-def inject_fine_to_coarse(patch: PatchInfo, T_coarse, T_fine):
+def inject_fine_to_coarse(patch: PatchInfo, T_coarse: jnp.ndarray, T_fine: jnp.ndarray) -> jnp.ndarray:
     """
     Injects fine grid solution into the coarse grid.
     Uses jnp.where to be JIT-compatible.

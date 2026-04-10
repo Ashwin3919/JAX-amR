@@ -7,15 +7,26 @@ Scheme:
 
 5 fixed-point iterations (matches v1/v2 approach; unconditionally stable CN).
 """
+from __future__ import annotations
 import jax
 import jax.numpy as jnp
 from jax import lax
 from solver.ops import laplacian, apply_bc
 
 
-def cn_step(T, Q, alpha: float, dt: float, dx: float, dy: float,
-            T_wall: float = 0.0, n_iter: int = 5):
+def cn_step(T: jnp.ndarray, Q: jnp.ndarray, alpha: float, dt: float,
+            dx: float, dy: float, T_wall: float = 0.0, n_iter: int = 5) -> jnp.ndarray:
     """One CN step; returns T^{n+1} with BCs enforced."""
+    if T.shape != Q.shape:
+        raise ValueError(f"cn_step: T.shape {T.shape} != Q.shape {Q.shape}")
+    if alpha <= 0.0:
+        raise ValueError(f"cn_step: alpha must be positive, got {alpha}")
+    if dt <= 0.0:
+        raise ValueError(f"cn_step: dt must be positive, got {dt}")
+    if dx <= 0.0 or dy <= 0.0:
+        raise ValueError(f"cn_step: grid spacing must be positive, got dx={dx}, dy={dy}")
+    if n_iter < 1:
+        raise ValueError(f"cn_step: n_iter must be >= 1, got {n_iter}")
     rhs_explicit = T + 0.5 * dt * alpha * laplacian(T, dx, dy) + dt * Q
 
     def body(T_k, _):

@@ -19,7 +19,6 @@ All ops are pure jnp — JIT-compilable and differentiable.
 import jax.numpy as jnp
 from jax import lax
 
-from solver.ops import laplacian
 from solver.cn_step import cn_step
 from amr.adaptive_patch import (
     gradient_centroid,
@@ -28,26 +27,7 @@ from amr.adaptive_patch import (
     fine_to_coarse,
     reinit_patch,
 )
-
-
-def _patch_cn_step(T_patch, Q_patch, T_boundary, alpha, dt, dx_f, dy_f, n_iter=5):
-    """
-    Crank-Nicolson step on the fine patch.
-    Boundary values are Dirichlet from T_boundary (interpolated from coarse).
-    dx_f, dy_f are JAX scalars (dynamic patch spacing) — fine in arithmetic.
-    """
-    rhs = T_patch + 0.5 * dt * alpha * laplacian(T_patch, dx_f, dy_f) + dt * Q_patch
-
-    def body(T_k, _):
-        T_new = rhs + 0.5 * dt * alpha * laplacian(T_k, dx_f, dy_f)
-        T_new = T_new.at[0,  :].set(T_boundary[0,  :])
-        T_new = T_new.at[-1, :].set(T_boundary[-1, :])
-        T_new = T_new.at[:,  0].set(T_boundary[:,  0])
-        T_new = T_new.at[:, -1].set(T_boundary[:, -1])
-        return T_new, None
-
-    T_new, _ = lax.scan(body, T_patch, None, length=n_iter)
-    return T_new
+from amr.composite_step import patch_cn_step
 
 
 def adaptive_step(T_coarse, T_patch, x0_old, x1_old, y0_old, y1_old,
@@ -99,7 +79,7 @@ def adaptive_step(T_coarse, T_patch, x0_old, x1_old, y0_old, y1_old,
     Q_fine = Q_fine_fn(Xf, Yf)
 
     # 7. Advance fine patch
-    T_patch_new = _patch_cn_step(T_patch_init, Q_fine, T_boundary, alpha, dt, dx_f, dy_f)
+    T_patch_new = patch_cn_step(T_patch_init, Q_fine, T_boundary, alpha, dt, dx_f, dy_f)
 
     # 8. Inject fine → coarse
     T_coarse_final = fine_to_coarse(

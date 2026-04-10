@@ -2,14 +2,17 @@
 compare.py — run all three solvers and print a side-by-side comparison.
 
 Usage:
-    PYTHONPATH=. python compare.py
+    python runs/compare.py
 """
-import sys
+import sys, os
+_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_root, "src"))
+sys.path.insert(0, os.path.dirname(__file__))
 import numpy as np
 
-from runs.run_uniform import run_uniform
-from runs.run_amr import run_amr
-from runs.run_composite_amr import run_simulation as run_fixed
+from run_uniform import run_uniform
+from run_amr import run_amr
+from run_composite_amr import run_simulation as run_fixed
 import config.params as p
 
 N_STEPS = p.n_steps   # use the same n_steps for all three (default 5000)

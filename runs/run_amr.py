@@ -10,15 +10,22 @@ Usage:
     PYTHONPATH=. python runs/run_amr.py               # normal output
     PYTHONPATH=. python runs/run_amr.py --plot-grid   # + patch-tracking animation
 """
-import os
+import sys, os
+_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_root, "src"))
+os.environ.setdefault("JAX_PLATFORMS", "")  # suppress "no TPU" warnings
 import argparse
+import logging
 import jax
 import jax.numpy as jnp
 from jax import lax
 import numpy as np
 
 import config.params as p
-from solver.grid import build_grid, build_laser_source
+
+logger = logging.getLogger(__name__)
+from solver.grid import build_grid
+from solver.laser_source import build_laser_source
 from amr.adaptive_step import adaptive_step
 from amr.adaptive_patch import make_fine_coords
 from ioutils.vtk_writer import write_legacy_vtk, write_pvd
@@ -26,30 +33,7 @@ from ioutils.checkpoint import save_checkpoint
 from analysis.metrics import Timer
 from viz.snapshots import plot_snapshots
 from viz.animate import create_animation, save_gif
-
-
-def _coarse_cells(n, Lx=1.0, Ly=1.0):
-    """n×n equal red cells covering the full domain — represents the coarse background grid."""
-    w, h = Lx / n, Ly / n
-    return [(i*w, j*h, (i+1)*w, (j+1)*h, 1)
-            for i in range(n) for j in range(n)]
-
-
-def _bounds_to_cells(x0, x1, y0, y1, n_coarse=8, n_fine=16):
-    """
-    8×8 red coarse cells across full domain + 16×16 white fine cells inside the patch.
-    Makes the grid structure intuitive: red = coarse everywhere,
-    dense white grid = where the fine solve is happening this frame.
-    """
-    x0, x1, y0, y1 = float(x0), float(x1), float(y0), float(y1)
-    cells = _coarse_cells(n_coarse)
-    fw = (x1 - x0) / n_fine
-    fh = (y1 - y0) / n_fine
-    for i in range(n_fine):
-        for j in range(n_fine):
-            cells.append((x0 + i*fw, y0 + j*fh,
-                          x0 + (i+1)*fw, y0 + (j+1)*fh, 3))
-    return cells
+from viz_utils import coarse_cells, bounds_to_cells
 
 
 def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,
@@ -90,6 +74,14 @@ def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,
 
     chunk_size = p.save_every
     n_chunks = n_steps // chunk_size
+    if n_steps % chunk_size != 0:
+        import warnings
+        warnings.warn(
+            f"n_steps={n_steps} is not divisible by save_every={chunk_size}. "
+            f"The last {n_steps % chunk_size} steps will be skipped. "
+            "Set n_steps to a multiple of save_every to avoid this.",
+            stacklevel=2,
+        )
 
     @jax.jit
     def run_chunk(state, t_start):
@@ -173,23 +165,24 @@ def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,
         write_pvd(os.path.join(output_dir, "amr_patch.pvd"), pvd_patch)
 
     Tc_final = state[0]
-    print(f"[amr-adaptive] {n_steps} steps | {timer.elapsed:.2f}s | "
-          f"peak T = {np.asarray(Tc_final).max():.4f} K | "
-          f"DOF = {Nc*Nc} + {Nf*Nf} = {Nc*Nc + Nf*Nf:,}")
+    logger.info("[amr-adaptive] %d steps | %.2fs | peak T = %.4f K | DOF = %d + %d = %d",
+                n_steps, timer.elapsed, np.asarray(Tc_final).max(),
+                Nc * Nc, Nf * Nf, Nc * Nc + Nf * Nf)
 
     return dict(T_final=Tc_final, frames=frames, times=times,
                 patch_bounds=patch_bounds, wallclock=timer.elapsed)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Adaptive AMR solver")
     parser.add_argument("--plot-grid", action="store_true",
                         help="Also generate patch-tracking animation and snapshot grid")
     args = parser.parse_args()
 
     Nc, Nf = 128, 512
-    print(f"Starting ADAPTIVE AMR simulation "
-          f"(coarse={Nc}x{Nc} dx≈1/128, moving fine patch={Nf}x{Nf} dx≈1/1024)...")
+    logger.info("Starting ADAPTIVE AMR simulation (coarse=%dx%d dx≈1/128, moving fine patch=%dx%d dx≈1/1024)...",
+                Nc, Nc, Nf, Nf)
     res = run_amr(Nc=Nc, Nf=Nf)
 
     Xc, Yc = build_grid(Nc, Nc, p.Lx, p.Ly)
@@ -199,15 +192,15 @@ if __name__ == "__main__":
                          title=f"AMR — dynamic patch (coarse {Nc}x{Nc}, fine {Nf}x{Nf})")
     fig.savefig("output/amr/snapshots.png", dpi=150,
                 bbox_inches="tight", facecolor="#0d0d0d")
-    print("Saved output/amr/snapshots.png")
+    logger.info("Saved output/amr/snapshots.png")
 
     fig2, anim = create_animation(res["frames"], Xc, Yc, res["times"])
     save_gif(anim, "output/amr/animation.gif")
-    print("Saved output/amr/animation.gif")
+    logger.info("Saved output/amr/animation.gif")
 
     # --- --plot-grid: patch-tracking overlay ---
     if args.plot_grid:
-        amr_frames = [_bounds_to_cells(x0, x1, y0, y1)
+        amr_frames = [bounds_to_cells(x0, x1, y0, y1)
                       for x0, x1, y0, y1 in res["patch_bounds"]]
 
         fig3 = plot_snapshots(res["frames"], Xc, Yc, res["times"],
@@ -215,9 +208,9 @@ if __name__ == "__main__":
                               title=f"AMR — patch trajectory (coarse {Nc}x{Nc}, fine {Nf}x{Nf})")
         fig3.savefig("output/amr/snapshots_grid.png", dpi=150,
                      bbox_inches="tight", facecolor="#0d0d0d")
-        print("Saved output/amr/snapshots_grid.png")
+        logger.info("Saved output/amr/snapshots_grid.png")
 
         fig4, anim2 = create_animation(res["frames"], Xc, Yc, res["times"],
                                        amr_frames=amr_frames)
         save_gif(anim2, "output/amr/animation_grid.gif")
-        print("Saved output/amr/animation_grid.gif")
+        logger.info("Saved output/amr/animation_grid.gif")

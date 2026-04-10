@@ -2,11 +2,11 @@
 
 **Author:** Ashwin Shirke
 
-![AMR Animation](amr_animation.gif)
+![AMR Animation](docs/amr_animation.gif)
 
 JAX-amR is a framework for differentiable adaptive mesh refinement (AMR) solver of PDEs, built entirely on JAX. The core idea: concentrate spatial resolution where gradients are large, keep the rest coarse, and do it in a way that remains fully JIT-compilable and end-to-end differentiable via `jax.grad`.
 
-The reusable framework lives in `solver/`, `amr/`, `viz/`, and `ioutils/`. The `runs/` directory contains the example application: the 2D transient heat equation driven by a Gaussian laser on a circular orbit. Three solver strategies are benchmarked on this problem — a uniform reference, a dynamic AMR solver that tracks the gradient centroid each step, and a fixed-patch composite solver pre-placed over the laser orbit. All use Crank-Nicolson time integration with 5-point finite difference spatial discretization.
+The reusable framework lives in `src/solver/`, `src/amr/`, `src/viz/`, and `src/ioutils/`. The `runs/` directory contains the example application: the 2D transient heat equation driven by a Gaussian laser on a circular orbit. Three solver strategies are benchmarked on this problem — a uniform reference, a dynamic AMR solver that tracks the gradient centroid each step, and a fixed-patch composite solver pre-placed over the laser orbit. All use Crank-Nicolson time integration with 5-point finite difference spatial discretization.
 
 ---
 
@@ -22,24 +22,29 @@ Measured on Apple M2 CPU, 5000 steps, dt=1e-4 s. AMR Dynamic is 11.5× faster th
 
 The dynamic variant tracks the laser with no prior knowledge of its path. The fixed variant requires knowing the orbit in advance but achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step.
 
-![AMR Snapshots](amr_snapshots.png)
+![AMR Snapshots](docs/amr_snapshots.png)
 ---
 
 ## Framework Structure
 
 ```
-solver/          # PDE-agnostic numerics: grid builder, Crank-Nicolson step, BC enforcement
-amr/             # AMR primitives: coarse↔fine interpolation, gradient centroid, patch reinit
-viz/             # Visualization: snapshots, animations, mesh-overlay rendering
-ioutils/         # I/O: legacy VTK writer, PVD index, checkpoint save/load
-runs/            # Example application (circular laser heat equation)
+src/
+  solver/          # PDE-agnostic numerics: grid builder, Crank-Nicolson step, BC enforcement
+    laser_source.py      # Application-specific Gaussian laser source (example physics)
+  amr/             # AMR primitives: coarse↔fine interpolation, gradient centroid, patch reinit
+  viz/             # Visualization: snapshots, animations, mesh-overlay rendering
+  ioutils/         # I/O: legacy VTK writer, PVD index, checkpoint save/load
+  config/          # Physical and solver parameters (params.py)
+runs/              # Example application (circular laser heat equation)
   run_uniform.py         # Model 1 — 1024×1024 uniform reference
   run_amr.py             # Model 2 — dynamic AMR, patch follows gradient centroid
   run_composite_amr.py   # Model 3 — fixed-patch AMR, pre-placed over known orbit
-config/          # Physical and solver parameters (params.py)
+  compare.py             # Benchmark comparison of all three models
+tests/             # Test suite (pytest)
+docs/              # Technical report and visualizations
 ```
 
-To adapt JAX-amR to a different PDE: replace `solver/grid.py` and `solver/cn_step.py` with your own spatial operator and source term; the AMR layer in `amr/` is agnostic to the physics.
+To adapt JAX-amR to a different PDE: replace `solver/grid.py`, `solver/cn_step.py`, and `solver/laser_source.py` with your own spatial operator, time integrator, and source term; the AMR layer in `amr/` is agnostic to the physics.
 
 ---
 
@@ -58,13 +63,13 @@ Requirements: `jax>=0.4.20`, `jaxlib>=0.4.20`, `numpy>=1.26`, `matplotlib>=3.8`,
 
 ```bash
 # Uniform reference (147 s)
-PYTHONPATH=. python runs/run_uniform.py
+python runs/run_uniform.py
 
 # AMR Dynamic (12.8 s, 11.5x speedup)
-PYTHONPATH=. python runs/run_amr.py
+python runs/run_amr.py
 
 # AMR Fixed (25.0 s, 5.9x speedup)
-PYTHONPATH=. python runs/run_composite_amr.py
+python runs/run_composite_amr.py
 ```
 
 Output goes to `output/uniform/`, `output/amr/`, and `output/amr_fixed/`. Each directory contains `snapshots.png`, `animation.gif`, VTK files, and `.npz` checkpoints.
@@ -74,9 +79,9 @@ Output goes to `output/uniform/`, `output/amr/`, and `output/amr_fixed/`. Each d
 Pass `--plot-grid` to generate animations showing the mesh structure:
 
 ```bash
-PYTHONPATH=. python runs/run_uniform.py --plot-grid       # 16x16 white cells, full domain
-PYTHONPATH=. python runs/run_amr.py --plot-grid           # 8x8 red coarse + 16x16 white fine, moving
-PYTHONPATH=. python runs/run_composite_amr.py --plot-grid # 8x8 red coarse + 16x16 white fine, fixed
+python runs/run_uniform.py --plot-grid       # 16x16 white cells, full domain
+python runs/run_amr.py --plot-grid           # 8x8 red coarse + 16x16 white fine, moving
+python runs/run_composite_amr.py --plot-grid # 8x8 red coarse + 16x16 white fine, fixed
 ```
 
 ---
@@ -86,8 +91,9 @@ PYTHONPATH=. python runs/run_composite_amr.py --plot-grid # 8x8 red coarse + 16x
 Every operation inside the JIT-compiled region is pure `jnp`: the 5-point Laplacian, Dirichlet BC enforcement, Gaussian laser source, bilinear interpolation, fine-to-coarse injection, gradient centroid detection, and the time loop via `lax.scan`. No Python conditionals. No NumPy calls. The computation from initial condition to final temperature is one continuous function that JAX can differentiate.
 
 ```python
+import sys; sys.path.insert(0, "src"); sys.path.insert(0, "runs")
 import jax
-from runs.run_composite_amr import run_simulation
+from run_composite_amr import run_simulation
 
 def peak_temperature(laser_power):
     res = run_simulation(

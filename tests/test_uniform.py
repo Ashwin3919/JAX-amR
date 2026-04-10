@@ -1,12 +1,14 @@
 """
 Physics tests — run with:
-    PYTHONPATH=. python tests.py
+    python -m pytest tests/test_uniform.py
 """
-import sys
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import numpy as np
 import jax.numpy as jnp
 
-from solver.grid import build_grid, build_laser_source
+from solver.grid import build_grid
+from solver.laser_source import build_laser_source
 from solver.ops import laplacian, apply_bc
 from solver.cn_step import cn_step
 import config.params as p

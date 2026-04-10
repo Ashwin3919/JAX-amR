@@ -1,12 +1,15 @@
-"""
-Grid-refinement convergence study (uniform solver only).
+"""Grid-refinement convergence study (uniform solver only).
 
 Runs the heat solver at increasing Nx values, measures L2 error
 against a fine-grid reference, and plots error vs DOF count.
 """
+from __future__ import annotations
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
+
+logger = logging.getLogger(__name__)
 
 from solver.grid import build_grid, build_laser_source
 from solver.ops import apply_bc
@@ -16,7 +19,7 @@ import config.params as p
 
 
 def _run_at_resolution(Nx: int, n_steps: int, dt: float, alpha: float,
-                       Lx: float = 1.0, Ly: float = 1.0) -> np.ndarray:
+                       Lx: float = 1.0, Ly: float = 1.0) -> np.ndarray:  # type: ignore[return]
     """Run uniform simulation at given Nx×Nx; return final T as numpy array."""
     Ny = Nx
     dx = Lx / (Nx - 1)
@@ -40,8 +43,8 @@ def _interpolate_to_coarse(T_fine: np.ndarray, Nx_coarse: int) -> np.ndarray:
     return T_fine[::step, ::step][:Nx_coarse, :Nx_coarse]
 
 
-def convergence_study(grid_sizes=None, n_steps: int = 100,
-                      dt: float = None, alpha: float = None):
+def convergence_study(grid_sizes: list[int] | None = None, n_steps: int = 100,
+                      dt: float | None = None, alpha: float | None = None) -> tuple[np.ndarray, np.ndarray]:
     """
     Run simulation at each resolution in *grid_sizes*.
 
@@ -62,25 +65,25 @@ def convergence_study(grid_sizes=None, n_steps: int = 100,
     grid_sizes = sorted(grid_sizes)
     Nx_ref = grid_sizes[-1] * 2
 
-    print(f"Computing reference solution at Nx={Nx_ref}...")
+    logger.info("Computing reference solution at Nx=%d...", Nx_ref)
     T_ref_fine = _run_at_resolution(Nx_ref, n_steps, dt, alpha)
 
     errors = []
     dofs = []
     for Nx in grid_sizes:
-        print(f"  Nx={Nx}...", end=" ", flush=True)
+        logger.info("  Nx=%d...", Nx)
         T = _run_at_resolution(Nx, n_steps, dt, alpha)
         T_ref_down = _interpolate_to_coarse(T_ref_fine, Nx)
         err = l2_error(T, T_ref_down)
         errors.append(err)
         dofs.append(Nx * Nx)
-        print(f"L2={err:.4e}")
+        logger.info("L2=%.4e", err)
 
     return np.array(dofs, dtype=np.int64), np.array(errors)
 
 
 def plot_convergence(dofs: np.ndarray, errors: np.ndarray,
-                     label: str = "uniform") -> plt.Figure:
+                     label: str = "uniform") -> plt.Figure:  # type: ignore[return]
     """Log-log plot of L2 error vs DOF count with a reference slope line."""
     fig, ax = plt.subplots(figsize=(6, 5))
     ax.loglog(dofs, errors, "o-", label=label, lw=2)

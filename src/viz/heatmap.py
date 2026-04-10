@@ -1,12 +1,14 @@
+from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.image
 
 
-def plot_heatmap(ax, T, X, Y,
+def plot_heatmap(ax: plt.Axes, T: np.ndarray, X: np.ndarray, Y: np.ndarray,
                  title: str = "Temperature",
                  cmap: str = "inferno",
-                 vmin=None, vmax=None,
-                 dark: bool = True):
+                 vmin: float | None = None, vmax: float | None = None,
+                 dark: bool = True) -> matplotlib.image.AxesImage:
     """
     Draw a 2D temperature heatmap on *ax*.
 

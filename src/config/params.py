@@ -51,3 +51,10 @@ patch_y1: float = 0.7
 # ── IO ────────────────────────────────────────────────────────────────────────
 vtk_every:        int = 50   # write VTK output every N solver steps (0 = disable)
 checkpoint_every: int = 100
+
+# Laser motion (circular mode)
+laser_omega: float = 2.0 * 3.141592653589793 / 0.1  # rad/s
+laser_radius: float = 0.2  # orbit radius in domain units
+
+# AMR numerics
+grad_epsilon: float = 1e-8  # gradient magnitude threshold

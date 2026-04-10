@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jax-amr"
+version = "1.0.0"
+description = "Differentiable adaptive mesh refinement for PDEs in JAX"
+requires-python = ">=3.10"
+dependencies = [
+    "jax",
+    "jaxlib",
+    "numpy",
+    "matplotlib",
+    "imageio",
+    "scipy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

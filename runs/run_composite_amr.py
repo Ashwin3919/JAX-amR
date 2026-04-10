@@ -8,7 +8,12 @@ Usage:
     PYTHONPATH=. python runs/run_composite_amr.py               # normal output
     PYTHONPATH=. python runs/run_composite_amr.py --plot-grid   # + fixed-patch overlay
 """
+import sys, os
+_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_root, "src"))
+os.environ.setdefault("JAX_PLATFORMS", "")  # suppress "no TPU" warnings
 import argparse
+import logging
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -16,7 +21,10 @@ import numpy as np
 import os
 
 import config.params as p
-from solver.grid import build_grid, build_laser_source
+
+logger = logging.getLogger(__name__)
+from solver.grid import build_grid
+from solver.laser_source import build_laser_source
 from amr.patch import build_patch_info, PatchInfo
 from amr.composite_step import composite_step
 
@@ -25,30 +33,7 @@ from ioutils.checkpoint import save_checkpoint
 from analysis.metrics import Timer
 from viz.snapshots import plot_snapshots
 from viz.animate import create_animation, save_gif
-
-
-def _coarse_cells(n, Lx=1.0, Ly=1.0):
-    """n×n equal red cells covering the full domain — represents the coarse background grid."""
-    w, h = Lx / n, Ly / n
-    return [(i*w, j*h, (i+1)*w, (j+1)*h, 1)
-            for i in range(n) for j in range(n)]
-
-
-def _bounds_to_cells(px0, px1, py0, py1, n_coarse=8, n_fine=16):
-    """
-    8×8 red coarse cells across full domain + 16×16 white fine cells inside the patch.
-    Makes the grid structure intuitive: red = coarse everywhere,
-    dense white grid = the pre-placed fine zone (fixed, never moves).
-    """
-    px0, px1, py0, py1 = float(px0), float(px1), float(py0), float(py1)
-    cells = _coarse_cells(n_coarse)
-    fw = (px1 - px0) / n_fine
-    fh = (py1 - py0) / n_fine
-    for i in range(n_fine):
-        for j in range(n_fine):
-            cells.append((px0 + i*fw, py0 + j*fh,
-                          px0 + (i+1)*fw, py0 + (j+1)*fh, 3))
-    return cells
+from viz_utils import coarse_cells, bounds_to_cells
 
 
 def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
@@ -92,6 +77,14 @@ def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
 
     chunk_size = p.save_every
     n_chunks = n_steps // chunk_size
+    if n_steps % chunk_size != 0:
+        import warnings
+        warnings.warn(
+            f"n_steps={n_steps} is not divisible by save_every={chunk_size}. "
+            f"The last {n_steps % chunk_size} steps will be skipped. "
+            "Set n_steps to a multiple of save_every to avoid this.",
+            stacklevel=2,
+        )
 
     @jax.jit
     def run_chunk(state, t_start):
@@ -136,14 +129,15 @@ def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
         write_pvd(os.path.join(output_dir, "amr_coarse.pvd"), pvd_coarse)
         write_pvd(os.path.join(output_dir, "amr_patch.pvd"), pvd_patch)
 
-    print(f"[amr] {n_steps} steps | {timer.elapsed:.2f}s | "
-          f"peak T = {np.asarray(Tp).max():.4f} K")
+    logger.info("[amr] %d steps | %.2fs | peak T = %.4f K",
+                n_steps, timer.elapsed, np.asarray(Tp).max())
 
     return dict(T_final=(Tc, Tp), frames=frames, times=times,
                 patch_bounds=(px0, px1, py0, py1), wallclock=timer.elapsed)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Composite JIT-AMR solver")
     parser.add_argument("--plot-grid", action="store_true",
                         help="Also generate fixed-patch overlay animation and snapshots")
@@ -154,9 +148,8 @@ if __name__ == "__main__":
     # Patch covers [0.25, 0.75]² — fully contains the laser orbit (R=0.2, centre=0.5)
     # dx_f = 0.5/511 ≈ 1/1024, matching the uniform reference resolution
     patch = (0.25, 0.75, 0.25, 0.75)
-    print(f"Starting AMR FIXED simulation "
-          f"(coarse={Nc}x{Nc} dx≈1/128, fixed fine patch={Nf}x{Nf} dx≈1/1024 "
-          f"at [{patch[0]},{patch[1]}]²)...")
+    logger.info("Starting AMR FIXED simulation (coarse=%dx%d dx≈1/128, fixed fine patch=%dx%d dx≈1/1024 at [%s,%s]²)...",
+                Nc, Nc, Nf, Nf, patch[0], patch[1])
 
     res = run_simulation(Nc_x=Nc, Nc_y=Nc, Nf_x=Nf, Nf_y=Nf,
                          patch_bounds=patch, n_steps=n_steps)
@@ -172,19 +165,19 @@ if __name__ == "__main__":
                          title=f"AMR Fixed — pre-placed patch (coarse {Nc}x{Nc}, fine {Nf}x{Nf})")
     fig.savefig("output/amr_fixed/snapshots.png", dpi=150,
                 bbox_inches="tight", facecolor="#0d0d0d")
-    print("Saved output/amr_fixed/snapshots.png")
+    logger.info("Saved output/amr_fixed/snapshots.png")
 
     fig2, anim = create_animation(frames, Xc, Yc, times)
     save_gif(anim, "output/amr_fixed/animation.gif")
-    print("Saved output/amr_fixed/animation.gif")
+    logger.info("Saved output/amr_fixed/animation.gif")
 
     jnp.save("output/amr_fixed/composite_coarse.npy", Tc_final)
     jnp.save("output/amr_fixed/composite_patch.npy", Tp_final)
-    print("Saved results to output/amr_fixed/")
+    logger.info("Saved results to output/amr_fixed/")
 
     # --- --plot-grid: fixed patch rectangle on every frame ---
     if args.plot_grid:
-        patch_cell = _bounds_to_cells(px0, px1, py0, py1)
+        patch_cell = bounds_to_cells(px0, px1, py0, py1)
         amr_frames = [patch_cell] * len(frames)
 
         fig3 = plot_snapshots(frames, Xc, Yc, times,
@@ -192,8 +185,8 @@ if __name__ == "__main__":
                               title=f"AMR Fixed — patch region (coarse {Nc}x{Nc}, fine {Nf}x{Nf})")
         fig3.savefig("output/amr_fixed/snapshots_grid.png", dpi=150,
                      bbox_inches="tight", facecolor="#0d0d0d")
-        print("Saved output/amr_fixed/snapshots_grid.png")
+        logger.info("Saved output/amr_fixed/snapshots_grid.png")
 
         fig4, anim2 = create_animation(frames, Xc, Yc, times, amr_frames=amr_frames)
         save_gif(anim2, "output/amr_fixed/animation_grid.gif")
-        print("Saved output/amr_fixed/animation_grid.gif")
+        logger.info("Saved output/amr_fixed/animation_grid.gif")

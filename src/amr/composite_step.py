@@ -1,3 +1,4 @@
+from __future__ import annotations
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -6,7 +7,7 @@ from solver.cn_step import cn_step
 
 from amr.patch import PatchInfo, interpolate_coarse_to_fine, inject_fine_to_coarse
 
-def apply_patch_bc(T_patch, T_boundary):
+def apply_patch_bc(T_patch: jnp.ndarray, T_boundary: jnp.ndarray) -> jnp.ndarray:
     """
     Enforces Dirichlet BC on the patch boundary.
     T_boundary is expected to have the same shape as T_patch but 
@@ -18,7 +19,8 @@ def apply_patch_bc(T_patch, T_boundary):
     T_patch = T_patch.at[:, -1].set(T_boundary[:, -1])
     return T_patch
 
-def patch_cn_step(T_patch, Q_patch, T_boundary, alpha, dt, dx, dy, n_iter=5):
+def patch_cn_step(T_patch: jnp.ndarray, Q_patch: jnp.ndarray, T_boundary: jnp.ndarray,
+                  alpha: float, dt: float, dx: float, dy: float, n_iter: int = 5) -> jnp.ndarray:
     """One CN step for the patch with time-dependent boundary conditions."""
     # RHS explicit part
     rhs_explicit = T_patch + 0.5 * dt * alpha * laplacian(T_patch, dx, dy) + dt * Q_patch
@@ -30,8 +32,11 @@ def patch_cn_step(T_patch, Q_patch, T_boundary, alpha, dt, dx, dy, n_iter=5):
     T_new, _ = lax.scan(body, T_patch, None, length=n_iter)
     return T_new
 
-def composite_step(T_coarse, T_patch, Q_coarse, Q_patch, patch: PatchInfo, alpha, dt, 
-                   dx_c, dy_c, dx_f, dy_f, T_wall=0.0, n_iter=5):
+def composite_step(T_coarse: jnp.ndarray, T_patch: jnp.ndarray,
+                   Q_coarse: jnp.ndarray, Q_patch: jnp.ndarray,
+                   patch: PatchInfo, alpha: float, dt: float,
+                   dx_c: float, dy_c: float, dx_f: float, dy_f: float,
+                   T_wall: float = 0.0, n_iter: int = 5) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Performs one composite time step on both coarse and fine grids.
     """

@@ -5,13 +5,20 @@ Usage:
     PYTHONPATH=. python runs/run_uniform.py               # normal output
     PYTHONPATH=. python runs/run_uniform.py --plot-grid   # + gradient-cell overlay
 """
+import sys, os
+_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_root, "src"))
+os.environ.setdefault("JAX_PLATFORMS", "")  # suppress "no TPU" warnings
 import argparse
-import os
+import logging
 import numpy as np
 import jax.numpy as jnp
 
 import config.params as p
-from solver.grid import build_grid, build_laser_source
+
+logger = logging.getLogger(__name__)
+from solver.grid import build_grid
+from solver.laser_source import build_laser_source
 from solver.ops import apply_bc
 from solver.cn_step import make_cn_step_jit
 from ioutils.vtk_writer import write_legacy_vtk, write_pvd
@@ -75,20 +82,21 @@ def run_uniform(Nx: int = None, Ny: int = None,
     if save_vtk and pvd_entries:
         write_pvd(os.path.join(output_dir, "uniform.pvd"), pvd_entries)
 
-    print(f"[uniform] {n_steps} steps | {timer.elapsed:.2f}s | "
-          f"peak T = {np.asarray(T).max():.4f} K")
+    logger.info("[uniform] %d steps | %.2fs | peak T = %.4f K",
+                n_steps, timer.elapsed, np.asarray(T).max())
 
     return dict(T_final=T, frames=frames, times=times, wallclock=timer.elapsed)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Uniform grid solver")
     parser.add_argument("--plot-grid", action="store_true",
                         help="Also generate grid-structure overlay animation")
     args = parser.parse_args()
 
     Nx = 1024
-    print(f"Starting ultra-high-resolution UNIFORM simulation ({Nx}x{Nx})...")
+    logger.info("Starting ultra-high-resolution UNIFORM simulation (%dx%d)...", Nx, Nx)
     res = run_uniform(Nx=Nx, Ny=Nx, n_steps=p.n_steps)
     X, Y = build_grid(Nx, Nx, p.Lx, p.Ly)
 
@@ -96,11 +104,11 @@ if __name__ == "__main__":
     fig = plot_snapshots(res["frames"], X, Y, res["times"], title="Uniform Grid")
     fig.savefig("output/uniform/snapshots.png", dpi=150,
                 bbox_inches="tight", facecolor="#0d0d0d")
-    print("Saved output/uniform/snapshots.png")
+    logger.info("Saved output/uniform/snapshots.png")
 
     fig2, anim = create_animation(res["frames"], X, Y, res["times"])
     save_gif(anim, "output/uniform/animation.gif")
-    print("Saved output/uniform/animation.gif")
+    logger.info("Saved output/uniform/animation.gif")
 
     # --- --plot-grid only: 16x16 equal white cells across the full domain ---
     # Shows that resolution is the same everywhere — no coarse/fine distinction.
@@ -117,9 +125,9 @@ if __name__ == "__main__":
                               title="Uniform Grid — same fine resolution everywhere")
         fig3.savefig("output/uniform/snapshots_grid.png", dpi=150,
                      bbox_inches="tight", facecolor="#0d0d0d")
-        print("Saved output/uniform/snapshots_grid.png")
+        logger.info("Saved output/uniform/snapshots_grid.png")
 
         fig4, anim2 = create_animation(res["frames"], X, Y, res["times"],
                                        amr_frames=amr_frames)
         save_gif(anim2, "output/uniform/animation_grid.gif")
-        print("Saved output/uniform/animation_grid.gif")
+        logger.info("Saved output/uniform/animation_grid.gif")
