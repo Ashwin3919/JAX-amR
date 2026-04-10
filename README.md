@@ -12,15 +12,36 @@ The reusable framework lives in `src/solver/`, `src/amr/`, `src/viz/`, and `src/
 
 ## Models
 
-| Model | Concept | DOF | Wallclock | Peak T | Error |
-| :--- | :--- | ---: | ---: | ---: | ---: |
-| Uniform | 1024×1024 full grid | 1,048,576 | 147.02 s | 118.7011 K | — |
-| AMR Dynamic | 128×128 coarse + 512×512 moving patch | 278,528 | 12.80 s | 117.3004 K | 1.18% |
-| AMR Fixed | 128×128 coarse + 512×512 at [0.25,0.75]² | 278,528 | 25.03 s | 118.7028 K | 0.0014% |
+JAX-amR was benchmarked on **Apple M2 CPU**, 5000 steps, dt=1e-4 s. Two measurement methods give different numbers for the same physics — both are correct; the difference is explained below.
 
-Measured on Apple M2 CPU, 5000 steps, dt=1e-4 s. AMR Dynamic is 11.5× faster than uniform; AMR Fixed is 5.9× faster. Both AMR variants use 3.76× fewer degrees of freedom.
+### Standalone runs (each script run cold, from a fresh process)
 
-The dynamic variant tracks the laser with no prior knowledge of its path. The fixed variant requires knowing the orbit in advance but achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step.
+Each solver starts with a cold XLA compilation (~1–2 s one-time cost included in the wallclock).
+
+| Model | DOF | Wallclock | Peak T | Error |
+| :--- | ---: | ---: | ---: | ---: |
+| Uniform (1024×1024) | 1,048,576 | 147.02 s | 118.7011 K | — |
+| AMR Dynamic (128×128 + 512×512 moving) | 278,528 | 12.80 s | 117.3004 K | 1.18% |
+| AMR Fixed (128×128 + 512×512 at [0.25,0.75]²) | 278,528 | 25.03 s | 118.7028 K | 0.0014% |
+
+Speedups: AMR Dynamic **11.5×**, AMR Fixed **5.9×**.
+
+### Sequential benchmark (`python runs/compare.py`)
+
+All three solvers run in the same process. The Uniform solver runs first and warms the XLA caches; the two AMR variants inherit a hot compilation environment and skip redundant kernel compilation.
+
+| Model | DOF | Wallclock | Peak T | Error |
+| :--- | ---: | ---: | ---: | ---: |
+| Uniform (1024×1024) | 1,048,576 | 22.38 s | 118.7011 K | — |
+| AMR Dynamic | 278,528 | 12.87 s | 117.3004 K | 1.18% |
+| AMR Fixed | 278,528 | 9.28 s | 118.7028 K | 0.0014% |
+
+Speedups: AMR Dynamic **1.7×**, AMR Fixed **2.4×** over the (also warm) Uniform run.
+
+> **Note on the discrepancy:** The Uniform solver drops from 147 s to 22 s because ~125 s of the standalone time is cold XLA compilation for a 1024×1024 kernel — a cost paid once per process, not per step. The AMR variants have smaller kernels that compile faster, so their standalone vs sequential times are nearly identical. The standalone numbers reflect real-world usage (one solver per job); the sequential numbers reflect peak runtime-only performance.
+
+Both AMR variants use **3.76× fewer degrees of freedom** than the uniform reference. The AMR Fixed variant achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step. The AMR Dynamic variant tracks the laser with no prior knowledge of its path.
+
 
 ![AMR Snapshots](docs/amr_snapshots.png)
 ---

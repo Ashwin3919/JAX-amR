@@ -11,9 +11,10 @@ Usage:
     PYTHONPATH=. python runs/run_amr.py --plot-grid   # + patch-tracking animation
 """
 import sys, os
+from typing import Any, Dict, List, Optional, Tuple
 _root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(_root, "src"))
-os.environ.setdefault("JAX_PLATFORMS", "")  # suppress "no TPU" warnings
+os.environ.setdefault("JAX_PLATFORMS", "")  
 import argparse
 import logging
 import jax
@@ -36,10 +37,14 @@ from viz.animate import create_animation, save_gif
 from viz_utils import coarse_cells, bounds_to_cells
 
 
-def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,
-            output_dir: str = "output/amr",
-            n_steps: int = None,
-            save_vtk: bool = True) -> dict:
+def run_amr(
+        Nc: int = 128,
+        Nf: int = 512,
+        half_w: float = 0.25,
+        output_dir: str = "output/amr",
+        n_steps: Optional[int] = None,
+        save_vtk: bool = True,
+) -> Dict[str, Any]:
     """
     True adaptive AMR solver.
 
@@ -48,15 +53,21 @@ def run_amr(Nc: int = 128, Nf: int = 512, half_w: float = 0.25,
     Nc       : coarse grid resolution (Nc x Nc, full domain)
     Nf       : fine patch resolution (Nf x Nf, fixed shape, dynamic location)
     half_w   : half-width of fine patch in physical units (patch = 2*half_w square)
+    output_dir : directory for VTK / checkpoint output
+    n_steps  : number of time steps (defaults to config.params)
     save_vtk : write VTK + PVD files for coarse and fine grids
 
     Returns
     -------
-    dict with keys: T_final, frames, times, patch_bounds, wallclock
+    Dict with keys:
+      T_final      : coarse T array at the final step
+      frames       : list of coarse np.ndarray snapshots (one per chunk)
+      times        : list of float times corresponding to each frame
       patch_bounds : list of (x0, x1, y0, y1) tuples, one per saved frame
+      wallclock    : total wall-clock time in seconds
     """
     os.makedirs(output_dir, exist_ok=True)
-    n_steps = n_steps or p.n_steps
+    n_steps = p.n_steps if n_steps is None else n_steps
 
     dx_c = p.Lx / (Nc - 1)
     dy_c = p.Ly / (Nc - 1)

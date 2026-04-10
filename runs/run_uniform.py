@@ -8,7 +8,7 @@ Usage:
 import sys, os
 _root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(_root, "src"))
-os.environ.setdefault("JAX_PLATFORMS", "")  # suppress "no TPU" warnings
+os.environ.setdefault("JAX_PLATFORMS", "") 
 import argparse
 import logging
 import numpy as np
@@ -40,8 +40,8 @@ def run_uniform(Nx: int = None, Ny: int = None,
     os.makedirs(output_dir, exist_ok=True)
     if n_steps is None:
         n_steps = p.n_steps
-    Nx = Nx or p.Nx
-    Ny = Ny or p.Ny
+    Nx = p.Nx if Nx is None else Nx
+    Ny = p.Ny if Ny is None else Ny
     dx = p.Lx / (Nx - 1)
     dy = p.Ly / (Ny - 1)
 
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     Nx = 1024
-    logger.info("Starting ultra-high-resolution UNIFORM simulation (%dx%d)...", Nx, Nx)
+    logger.info("Starting UNIFORM simulation (%dx%d)...", Nx, Nx)
     res = run_uniform(Nx=Nx, Ny=Nx, n_steps=p.n_steps)
     X, Y = build_grid(Nx, Nx, p.Lx, p.Ly)
 

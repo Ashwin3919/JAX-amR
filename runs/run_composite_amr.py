@@ -9,16 +9,16 @@ Usage:
     PYTHONPATH=. python runs/run_composite_amr.py --plot-grid   # + fixed-patch overlay
 """
 import sys, os
+from typing import Any, Dict, Optional, Tuple
 _root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(_root, "src"))
-os.environ.setdefault("JAX_PLATFORMS", "")  # suppress "no TPU" warnings
+os.environ.setdefault("JAX_PLATFORMS", "") 
 import argparse
 import logging
 import jax
 import jax.numpy as jnp
 from jax import lax
 import numpy as np
-import os
 
 import config.params as p
 
@@ -36,24 +36,50 @@ from viz.animate import create_animation, save_gif
 from viz_utils import coarse_cells, bounds_to_cells
 
 
-def run_simulation(Nc_x=None, Nc_y=None, Nf_x=None, Nf_y=None,
-                   patch_bounds=None, laser_power=None, n_steps=None,
-                   output_dir="output/amr_fixed", save_vtk=True):
+def run_simulation(
+        Nc_x: Optional[int] = None,
+        Nc_y: Optional[int] = None,
+        Nf_x: Optional[int] = None,
+        Nf_y: Optional[int] = None,
+        patch_bounds: Optional[Tuple[float, float, float, float]] = None,
+        laser_power: Optional[float] = None,
+        n_steps: Optional[int] = None,
+        output_dir: str = "output/amr_fixed",
+        save_vtk: bool = True,
+) -> Dict[str, Any]:
     """
-    Runs the composite grid simulation.
-    Overrides config.params if arguments are provided.
+    Run the composite fixed-patch AMR simulation.
+
+    Parameters
+    ----------
+    Nc_x, Nc_y   : coarse grid resolution (defaults to config.params)
+    Nf_x, Nf_y   : fine patch resolution  (defaults to config.params)
+    patch_bounds : (px0, px1, py0, py1) physical bounds of the fine patch
+    laser_power  : laser power density W/m²  (defaults to config.params)
+    n_steps      : number of time steps      (defaults to config.params)
+    output_dir   : directory for VTK / checkpoint output
+    save_vtk     : whether to write VTK and PVD files
+
+    Returns
+    -------
+    Dict with keys:
+      T_final      : (T_coarse, T_patch) arrays at the final step
+      frames       : list of coarse np.ndarray snapshots (one per chunk)
+      times        : list of float times corresponding to each frame
+      patch_bounds : (px0, px1, py0, py1) used for the fine patch
+      wallclock    : total wall-clock time in seconds
     """
     os.makedirs(output_dir, exist_ok=True)
-    Nc_x = Nc_x or p.Nc_x
-    Nc_y = Nc_y or p.Nc_y
-    Nf_x = Nf_x or p.Nf_x
-    Nf_y = Nf_y or p.Nf_y
+    Nc_x = p.Nc_x if Nc_x is None else Nc_x
+    Nc_y = p.Nc_y if Nc_y is None else Nc_y
+    Nf_x = p.Nf_x if Nf_x is None else Nf_x
+    Nf_y = p.Nf_y if Nf_y is None else Nf_y
     if patch_bounds is None:
         px0, px1, py0, py1 = p.patch_x0, p.patch_x1, p.patch_y0, p.patch_y1
     else:
         px0, px1, py0, py1 = patch_bounds
-    laser_power = laser_power or p.laser_power
-    n_steps = n_steps or p.n_steps
+    laser_power = p.laser_power if laser_power is None else laser_power
+    n_steps = p.n_steps if n_steps is None else n_steps
 
     # 1. Initialize Grids
     Xc, Yc = build_grid(Nc_x, Nc_y, p.Lx, p.Ly)
