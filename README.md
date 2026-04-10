@@ -113,6 +113,9 @@ Every operation inside the JIT-compiled region is pure `jnp`: the 5-point Laplac
 
 Check the `runs/Diffrential/` folder, where there are three optimization problems successfully solved because the code is entirely differentiable.
 
+### Scientific Note: Static-Shape AMR
+Traditional AMR utilizes dynamic tree-based tracking to spawn localized sub-grids. However, JAX's XLA compiler rigorously requires static array shapes for `jax.jit` compilation. To bridge this gap, this framework implements a differentiable foveated/moving-patch approach. It relies on continuous interpolations (`jnp.where` masking) of a statically-sized fine-grid patch that autonomously tracks gradient centroids over a coarse domain. This design concession allows the solver to mimic local refinement while remaining 100% compliant with static JIT compilation and end-to-end differentiation. *(See `docs/tech-report.md` for a full mathematical breakdown)*.
+
 ---
 
 ## ParaView
