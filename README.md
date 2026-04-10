@@ -111,25 +111,7 @@ python runs/run_composite_amr.py --plot-grid # 8x8 red coarse + 16x16 white fine
 
 Every operation inside the JIT-compiled region is pure `jnp`: the 5-point Laplacian, Dirichlet BC enforcement, Gaussian laser source, bilinear interpolation, fine-to-coarse injection, gradient centroid detection, and the time loop via `lax.scan`. No Python conditionals. No NumPy calls. The computation from initial condition to final temperature is one continuous function that JAX can differentiate.
 
-```python
-import sys; sys.path.insert(0, "src"); sys.path.insert(0, "runs")
-import jax
-from run_composite_amr import run_simulation
-
-def peak_temperature(laser_power):
-    res = run_simulation(
-        Nc_x=128, Nc_y=128, Nf_x=512, Nf_y=512,
-        patch_bounds=(0.25, 0.75, 0.25, 0.75),
-        laser_power=laser_power,
-        n_steps=500,
-        save_vtk=False
-    )
-    Tc, Tp = res["T_final"]
-    return jnp.max(Tp)
-
-# Exact gradient through all 500 time steps
-dT_dP = jax.grad(peak_temperature)(2500.0)
-```
+Check the `runs/Diffrential/` folder, where there are three optimization problems successfully solved because the code is entirely differentiable.
 
 ---
 
