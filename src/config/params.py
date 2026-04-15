@@ -1,6 +1,10 @@
 import jax
-# Enable float64 precision for scientific rigor (mandatory for senior simulation roles)
-jax.config.update("jax_enable_x64", True)
+import os
+
+# Precision Toggle: Set JAX_ENABLE_X64=0 in shell to use float32 (fast but less precise)
+# Defaulting to True for scientific rigor.
+ENABLE_X64 = os.environ.get("JAX_ENABLE_X64", "1") == "1"
+jax.config.update("jax_enable_x64", ENABLE_X64)
 
 # ── Domain ──────────────────────────────────────────────────────────────────
 Lx: float = 1.0

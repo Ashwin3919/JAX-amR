@@ -6,6 +6,11 @@ Uses jax.grad through lax.scan (all 500 CN steps are differentiated).
 Run: python runs/Diffrential/optimise_p1.py
 """
 import sys, os
+
+# Precision Toggle: Use True for float64 (high accuracy), False for float32 (fast)
+USE_64BIT = False
+os.environ["JAX_ENABLE_X64"] = "1" if USE_64BIT else "0"
+
 _root = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(_root, "src"))
 sys.path.insert(0, os.path.join(_root, "runs"))

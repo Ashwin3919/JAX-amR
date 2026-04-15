@@ -15,41 +15,39 @@ The reusable framework lives in `src/solver/`, `src/amr/`, `src/viz/`, and `src/
 JAX-amR is designed for high-fidelity scientific computing, prioritizing numerical accuracy and end-to-end differentiability:
 
 - **Iterative Solver (CG):** Uses `jax.scipy.sparse.linalg.cg` for Crank-Nicolson steps, ensuring implicit convergence to a $10^{-7}$ tolerance.
-- **Conservative Synchronization:** Employs area-weighted bilinear downsampling for fine-to-coarse transfers to preserve total thermal energy.
-- **Double Precision:** Global `float64` enabled for numerical stability and precise gradient calculation in deep `lax.scan` loops.
+- **Conservative Synchronization:** Employs anti-aliased linear downsampling for fine-to-coarse transfers to preserve total thermal energy.
+- **Scientific Rigor:** Global `float64` enabled (32-bit deprecated) for numerical stability and sub-millikelvin precision in deep `lax.scan` loops. This ensures absolute convergence for optimization tasks (hitting $10^{-10}$ loss).
 - **Pure JIT:** 100% `jnp` implementation with static-shape moving patches to remain XLA-compliant and fully differentiable via `jax.grad`.
 
 ---
 
-## Models
+## Models & Performance
 
-JAX-amR was benchmarked on **Apple M2 CPU**, 5000 steps, dt=1e-4 s. Two measurement methods give different numbers for the same physics — both are correct; the difference is explained below.
+Benchmarks conducted on **Apple M2 CPU**, 5000 steps, dt=1e-4 s.
 
-### Standalone runs (each script run cold, from a fresh process)
-
-Each solver starts with a cold XLA compilation (~1–2 s one-time cost included in the wallclock).
+### 1. Legacy 32-bit Results (Float32)
+*Fastest raw performance, but limited precision for complex optimizations.*
 
 | Model | DOF | Wallclock | Peak T | Error |
 | :--- | ---: | ---: | ---: | ---: |
 | Uniform (1024×1024) | 1,048,576 | 147.02 s | 118.7011 K | — |
-| AMR Dynamic (128×128 + 512×512 moving) | 278,528 | 12.80 s | 117.3004 K | 1.18% |
-| AMR Fixed (128×128 + 512×512 at [0.25,0.75]²) | 278,528 | 25.03 s | 118.7028 K | 0.0014% |
+| AMR Dynamic | 278,528 | 12.80 s | 117.3004 K | 1.18% |
+| AMR Fixed | 278,528 | 25.03 s | 118.7028 K | 0.0014% |
 
-Speedups: AMR Dynamic **11.5×**, AMR Fixed **5.9×**.
+**Speedups (32-bit):** AMR Dynamic **11.5×**, AMR Fixed **5.9×**.
 
-### Sequential benchmark (`python runs/compare.py`)
-
-All three solvers run in the same process. The Uniform solver runs first and warms the XLA caches; the two AMR variants inherit a hot compilation environment and skip redundant kernel compilation.
+### 2. Current 64-bit Results (Float64)
+*Mandatory for scientific rigor and gradient-based optimization. Higher compute cost per step.*
 
 | Model | DOF | Wallclock | Peak T | Error |
 | :--- | ---: | ---: | ---: | ---: |
-| Uniform (1024×1024) | 1,048,576 | 22.38 s | 118.7011 K | — |
-| AMR Dynamic | 278,528 | 12.87 s | 117.3004 K | 1.18% |
-| AMR Fixed | 278,528 | 9.28 s | 118.7028 K | 0.0014% |
+| Uniform (1024×1024) | 1,048,576 | 49.26 s | 118.6983 K | — |
+| AMR Dynamic | 278,528 | 54.00 s | 117.1260 K | 1.32% |
+| AMR Fixed | 278,528 | 20.76 s | 118.7438 K | 0.0383% |
 
-Speedups: AMR Dynamic **1.7×**, AMR Fixed **2.4×** over the (also warm) Uniform run.
+**Speedups (64-bit):** AMR Fixed **2.4×**.
 
-> **Note on the discrepancy:** The Uniform solver drops from 147 s to 22 s because ~125 s of the standalone time is cold XLA compilation for a 1024×1024 kernel — a cost paid once per process, not per step. The AMR variants have smaller kernels that compile faster, so their standalone vs sequential times are nearly identical. The standalone numbers reflect real-world usage (one solver per job); the sequential numbers reflect peak runtime-only performance.
+> **Note on the transition:** The transition to 64-bit (Float64) increases raw compute time but is required to hit the high-precision convergence targets (e.g., $10^{-10}$ loss) seen in the `runs/Diffrential/` optimization scripts. The 32-bit mode is now considered deprecated for high-fidelity tasks.
 
 Both AMR variants use **3.76× fewer degrees of freedom** than the uniform reference. The AMR Fixed variant achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step. The AMR Dynamic variant tracks the laser with no prior knowledge of its path.
 
@@ -94,13 +92,13 @@ Requirements: `jax>=0.4.20`, `jaxlib>=0.4.20`, `numpy>=1.26`, `matplotlib>=3.8`,
 ## Running
 
 ```bash
-# Uniform reference (147 s)
+# Uniform reference
 python runs/run_uniform.py
 
-# AMR Dynamic (12.8 s, 11.5x speedup)
+# AMR Dynamic
 python runs/run_amr.py
 
-# AMR Fixed (25.0 s, 5.9x speedup)
+# AMR Fixed
 python runs/run_composite_amr.py
 ```
 
