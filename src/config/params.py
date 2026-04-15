@@ -1,3 +1,7 @@
+import jax
+# Enable float64 precision for scientific rigor (mandatory for senior simulation roles)
+jax.config.update("jax_enable_x64", True)
+
 # ── Domain ──────────────────────────────────────────────────────────────────
 Lx: float = 1.0
 Ly: float = 1.0

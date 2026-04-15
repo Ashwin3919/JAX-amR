@@ -48,9 +48,9 @@ def test_inject_fine_to_coarse_exact():
     
     T_injected = inject_fine_to_coarse(patch, T_coarse, T_fine)
     
-    # Points inside should be 5.0, points outside should be 0.0
-    assert jnp.all(T_injected[patch.mask] == 5.0)
-    assert jnp.all(T_injected[~patch.mask] == 0.0)
+    # Points inside should be 5.0 (within numerical tolerance), points outside should be 0.0
+    assert jnp.allclose(T_injected[patch.mask], 5.0, atol=1e-12)
+    assert jnp.allclose(T_injected[~patch.mask], 0.0, atol=1e-12)
 
 def test_composite_step_differentiability():
     """Test that we can take gradients through a composite step."""

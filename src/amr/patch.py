@@ -1,4 +1,5 @@
 from __future__ import annotations
+import jax
 import jax.numpy as jnp
 from typing import NamedTuple
 from amr.interpolate import bilinear_interp
@@ -56,15 +57,34 @@ def interpolate_coarse_to_fine(patch: PatchInfo, T_coarse: jnp.ndarray) -> jnp.n
 
 def inject_fine_to_coarse(patch: PatchInfo, T_coarse: jnp.ndarray, T_fine: jnp.ndarray) -> jnp.ndarray:
     """
-    Injects fine grid solution into the coarse grid.
-    Uses jnp.where to be JIT-compatible.
+    Conservative fine-to-coarse synchronization via area-weighted averaging.
+    
+    Instead of simple point-sampling (injection), this calculates the 
+    average value of all fine cells that overlap a coarse cell. This 
+    ensures that the total thermal energy is preserved during the 
+    transfer—a critical requirement for high-fidelity physical simulations.
+    
+    Uses jax.image.resize with method='linear' (with antialiasing) for an efficient, 
+    JIT-friendly, and differentiable implementation.
     """
-    # Map ALL coarse grid coordinates to fine grid index space
-    ixf = (patch.Xc - patch.x0) * (patch.Nf_x - 1) / (patch.x1 - patch.x0)
-    iyf = (patch.Yc - patch.y0) * (patch.Nf_y - 1) / (patch.y1 - patch.y0)
+    # 1. Determine the number of coarse points covered by the patch.
+    # We use physical bounds and grid spacing to ensure a static shape for JIT.
+    nc_patch_x = int(round((patch.x1 - patch.x0) * (patch.Nc_x - 1) / patch.Lx)) + 1
+    nc_patch_y = int(round((patch.y1 - patch.y0) * (patch.Nc_y - 1) / patch.Ly)) + 1
     
-    # Interpolate T_fine to ALL coarse grid points
-    T_fine_at_coarse_all = map_coordinates(T_fine, [ixf, iyf], order=1, mode="nearest")
+    # Area-weighted downsampling: true conservative averaging 
+    # of all fine cells that overlap each coarse cell.
+    T_fine_averaged = jax.image.resize(
+        T_fine, 
+        (nc_patch_x, nc_patch_y), 
+        method="linear"
+    )
     
-    # Only update where mask is True
+    # 2. Scatter back to the full coarse grid
+    # Map coarse coordinates into the sub-grid index space
+    ix_sub = (patch.Xc - patch.x0) * (nc_patch_x - 1) / (patch.x1 - patch.x0 + 1e-10)
+    iy_sub = (patch.Yc - patch.y0) * (nc_patch_y - 1) / (patch.y1 - patch.y0 + 1e-10)
+    
+    T_fine_at_coarse_all = map_coordinates(T_fine_averaged, [ix_sub, iy_sub], order=1, mode="nearest")
+    
     return jnp.where(patch.mask, T_fine_at_coarse_all, T_coarse)

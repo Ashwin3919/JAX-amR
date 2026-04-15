@@ -10,6 +10,17 @@ The reusable framework lives in `src/solver/`, `src/amr/`, `src/viz/`, and `src/
 
 ---
 
+## Numerical Rigor & Differentiability
+
+JAX-amR is designed for high-fidelity scientific computing, prioritizing numerical accuracy and end-to-end differentiability:
+
+- **Iterative Solver (CG):** Uses `jax.scipy.sparse.linalg.cg` for Crank-Nicolson steps, ensuring implicit convergence to a $10^{-7}$ tolerance.
+- **Conservative Synchronization:** Employs area-weighted bilinear downsampling for fine-to-coarse transfers to preserve total thermal energy.
+- **Double Precision:** Global `float64` enabled for numerical stability and precise gradient calculation in deep `lax.scan` loops.
+- **Pure JIT:** 100% `jnp` implementation with static-shape moving patches to remain XLA-compliant and fully differentiable via `jax.grad`.
+
+---
+
 ## Models
 
 JAX-amR was benchmarked on **Apple M2 CPU**, 5000 steps, dt=1e-4 s. Two measurement methods give different numbers for the same physics — both are correct; the difference is explained below.

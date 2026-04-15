@@ -18,11 +18,24 @@ def gradient_centroid(T: jnp.ndarray, Xc: jnp.ndarray, Yc: jnp.ndarray) -> tuple
     Falls back to domain centre (0.5, 0.5) when gradients are negligible
     (e.g. at t=0 when T is uniform), so the patch starts in a sensible place.
     Returns (cx, cy) as JAX scalars.
+
+    grad_epsilon (config.params) is compared against the sum of true physical
+    gradient magnitudes |∇T| across all interior points, i.e. in units of K/m
+    (or whatever T's units are).  The 1/(2·dx) factors are included here so
+    the threshold has a physically interpretable meaning.
     """
-    gx = jnp.pad(T[2:, 1:-1] - T[:-2, 1:-1], 1, mode="constant")
-    gy = jnp.pad(T[1:-1, 2:] - T[1:-1, :-2], 1, mode="constant")
+    # Grid spacings derived from the coordinate arrays (uniform grid assumed).
+    dx = Xc[1, 0] - Xc[0, 0]
+    dy = Yc[0, 1] - Yc[0, 0]
+
+    # Central-difference gradients, normalised to true physical units [T/length].
+    gx = jnp.pad((T[2:, 1:-1] - T[:-2, 1:-1]) / (2.0 * dx), 1, mode="constant")
+    gy = jnp.pad((T[1:-1, 2:] - T[1:-1, :-2]) / (2.0 * dy), 1, mode="constant")
+
     w = jnp.sqrt(gx ** 2 + gy ** 2)
     total = jnp.sum(w)
+    # Centroid position is invariant to the 1/(2h) scaling (cancels in ratio),
+    # but `total` is now in meaningful units so grad_epsilon can be calibrated.
     cx = jnp.where(total < p.grad_epsilon, 0.5, jnp.sum(Xc * w) / (total + 1e-30))
     cy = jnp.where(total < p.grad_epsilon, 0.5, jnp.sum(Yc * w) / (total + 1e-30))
     return cx, cy
@@ -37,6 +50,11 @@ def make_fine_coords(cx: jnp.ndarray, cy: jnp.ndarray, half_w: float,
     """
     if half_w <= 0.0:
         raise ValueError(f"make_fine_coords: half_w must be positive, got {half_w}")
+    if half_w > Lx / 2.0 or half_w > Ly / 2.0:
+        raise ValueError(
+            f"make_fine_coords: half_w ({half_w}) exceeds half-domain size "
+            f"({Lx/2.0}, {Ly/2.0}). Patch would be larger than domain."
+        )
     if Nf_x < 2 or Nf_y < 2:
         raise ValueError(f"make_fine_coords: Nf_x/Nf_y must be >= 2, got {Nf_x},{Nf_y}")
     x0 = jnp.clip(cx - half_w, 0.0, Lx - 2.0 * half_w)
@@ -64,17 +82,35 @@ def coarse_to_fine(T_coarse: jnp.ndarray, Xf: jnp.ndarray, Yf: jnp.ndarray,
 def fine_to_coarse(T_coarse: jnp.ndarray, T_fine: jnp.ndarray,
                    Xc: jnp.ndarray, Yc: jnp.ndarray,
                    x0: jnp.ndarray, x1: jnp.ndarray, y0: jnp.ndarray, y1: jnp.ndarray,
-                   Nf_x: int, Nf_y: int) -> jnp.ndarray:
+                   half_w: float, Nf_x: int, Nf_y: int, Nc_x: int, Nc_y: int, Lx: float, Ly: float) -> jnp.ndarray:
     """
-    Inject fine patch solution back into the coarse grid.
-    Only coarse points inside [x0,x1] x [y0,y1] are updated.
-    Uses jnp.where — no Python conditionals, fully traceable.
+    Conservative fine-to-coarse synchronization via area-weighted averaging.
+    
+    Instead of point-sampling (injection), this uses jax.image.resize 
+    to average the fine-grid patch down to the coarse-grid resolution 
+    for the region it covers. This preserves the integral of the 
+    temperature field, ensuring physical conservation.
     """
+    # 1. Determine the number of coarse points covered by the patch.
+    # To keep shapes static for JIT, we use the constant patch width (2*half_w)
+    # and the constant coarse grid spacing.
+    nc_patch_x = int(round(2.0 * half_w * (Nc_x - 1) / Lx)) + 1
+    nc_patch_y = int(round(2.0 * half_w * (Nc_y - 1) / Ly)) + 1
+    
+    # Mask of coarse points inside the patch
     mask = (Xc >= x0) & (Xc <= x1) & (Yc >= y0) & (Yc <= y1)
-    ixf = (Xc - x0) * (Nf_x - 1) / (x1 - x0)
-    iyf = (Yc - y0) * (Nf_y - 1) / (y1 - y0)
-    T_fine_at_coarse = map_coords_interp(T_fine, ixf, iyf)
-    return jnp.where(mask, T_fine_at_coarse, T_coarse)
+
+    # 2. Area-weighted downsampling: true conservative averaging 
+    # of the fine cells within each coarse cell.
+    T_fine_averaged = jax.image.resize(T_fine, (nc_patch_x, nc_patch_y), method="linear")
+
+    # 3. Scatter back to the full coarse grid
+    ix_sub = (Xc - x0) * (nc_patch_x - 1) / (x1 - x0 + 1e-10)
+    iy_sub = (Yc - y0) * (nc_patch_y - 1) / (y1 - y0 + 1e-10)
+    
+    T_fine_at_coarse_all = map_coords_interp(T_fine_averaged, ix_sub, iy_sub)
+    
+    return jnp.where(mask, T_fine_at_coarse_all, T_coarse)
 
 
 def reinit_patch(

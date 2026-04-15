@@ -34,25 +34,10 @@ def adaptive_step(T_coarse, T_patch, x0_old, x1_old, y0_old, y1_old,
                   Q_coarse, Q_fine_fn,
                   Xc, Yc, half_w,
                   Nc_x, Nc_y, Nf_x, Nf_y, Lx, Ly,
-                  alpha, dt, dx_c, dy_c, T_wall=0.0):
+                  alpha, dt, dx_c, dy_c, T_wall=0.0, use_cg=True):
     """
     One adaptive composite time step.
-
-    Parameters
-    ----------
-    T_coarse           : (Nc_x, Nc_y) coarse temperature
-    T_patch            : (Nf_x, Nf_y) fine patch temperature (previous step)
-    x0_old..y1_old     : previous patch physical bounds (carried as state)
-    Q_coarse           : (Nc_x, Nc_y) source on coarse grid
-    Q_fine_fn          : callable (Xf, Yf) -> Q_fine at dynamic fine coords
-    Xc, Yc            : (Nc_x, Nc_y) coarse grid coordinates (static)
-    half_w             : half-width of fine patch in physical units
-    Nc_x/y, Nf_x/y    : grid resolutions
-    Lx, Ly, alpha, dt, dx_c, dy_c, T_wall : solver params
-
-    Returns
-    -------
-    T_coarse_new, T_patch_new, x0, x1, y0, y1
+    ... (docstring) ...
     """
     # 1. Detect new patch center from current coarse field
     cx, cy = gradient_centroid(T_coarse, Xc, Yc)
@@ -69,8 +54,8 @@ def adaptive_step(T_coarse, T_patch, x0_old, x1_old, y0_old, y1_old,
         Nf_x, Nf_y, T_coarse, Nc_x, Nc_y, Lx, Ly,
     )
 
-    # 4. Advance coarse grid
-    T_coarse_new = cn_step(T_coarse, Q_coarse, alpha, dt, dx_c, dy_c, T_wall)
+    # 4. Advance coarse grid (Upgraded to use CG by default)
+    T_coarse_new = cn_step(T_coarse, Q_coarse, alpha, dt, dx_c, dy_c, T_wall, use_cg=use_cg)
 
     # 5. Boundary conditions for fine patch from post-step coarse
     T_boundary = coarse_to_fine(T_coarse_new, Xf, Yf, Nc_x, Nc_y, Lx, Ly)
@@ -78,12 +63,12 @@ def adaptive_step(T_coarse, T_patch, x0_old, x1_old, y0_old, y1_old,
     # 6. Fine source at new patch coordinates
     Q_fine = Q_fine_fn(Xf, Yf)
 
-    # 7. Advance fine patch
-    T_patch_new = patch_cn_step(T_patch_init, Q_fine, T_boundary, alpha, dt, dx_f, dy_f)
+    # 7. Advance fine patch (Upgraded to use CG by default)
+    T_patch_new = patch_cn_step(T_patch_init, Q_fine, T_boundary, alpha, dt, dx_f, dy_f, use_cg=use_cg)
 
-    # 8. Inject fine → coarse
+    # 8. Inject fine → coarse (Conservative area-weighted update)
     T_coarse_final = fine_to_coarse(
-        T_coarse_new, T_patch_new, Xc, Yc, x0, x1, y0, y1, Nf_x, Nf_y
+        T_coarse_new, T_patch_new, Xc, Yc, x0, x1, y0, y1, half_w, Nf_x, Nf_y, Nc_x, Nc_y, Lx, Ly
     )
 
     return T_coarse_final, T_patch_new, x0, x1, y0, y1
