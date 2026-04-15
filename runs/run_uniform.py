@@ -8,7 +8,7 @@ Usage:
 import sys, os
 
 # Precision Toggle: Use True for float64 (high accuracy), False for float32 (fast)
-USE_64BIT = True
+USE_64BIT = os.environ.get("JAX_ENABLE_X64", "1") == "1"
 os.environ["JAX_ENABLE_X64"] = "1" if USE_64BIT else "0"
 
 _root = os.path.join(os.path.dirname(__file__), "..")

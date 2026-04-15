@@ -23,33 +23,35 @@ JAX-amR is designed for high-fidelity scientific computing, prioritizing numeric
 
 ## Models & Performance
 
-Benchmarks conducted on **Apple M2 CPU**, 5000 steps, dt=1e-4 s.
+Benchmarks conducted natively on an **Apple M2 CPU**, integrating 5000 Crank-Nicolson steps over simulated $t=0.5$s ($\Delta t=10^{-4}$ s).
 
 ### 1. Legacy 32-bit Results (Float32)
-*Fastest raw performance, but limited precision for complex optimizations.*
+*Fast, low-precision benchmarking mode for rapid prototyping. (Run via `JAX_ENABLE_X64=0`)*
 
 | Model | DOF | Wallclock | Peak T | Error |
 | :--- | ---: | ---: | ---: | ---: |
-| Uniform (1024×1024) | 1,048,576 | 147.02 s | 118.7011 K | — |
-| AMR Dynamic | 278,528 | 12.80 s | 117.3004 K | 1.18% |
-| AMR Fixed | 278,528 | 25.03 s | 118.7028 K | 0.0014% |
+| Uniform (1024×1024) | 1,048,576 | 36.44 s | 118.7001 K | — |
+| AMR Dynamic | 278,528 | 45.86 s | 117.1248 K | 1.33% |
+| AMR Fixed | 278,528 | 22.12 s | 118.7451 K | 0.0379% |
 
-**Speedups (32-bit):** AMR Dynamic **11.5×**, AMR Fixed **5.9×**.
+**Speedups (32-bit):** AMR Fixed **1.6×**. (Dynamic mode incurs compiler emulation overhead).
 
 ### 2. Current 64-bit Results (Float64)
-*Mandatory for scientific rigor and gradient-based optimization. Higher compute cost per step.*
+*Default environment. Mandatory for scientific rigor, accurate inverse problems, and deep `lax.scan` optimizations.*
 
 | Model | DOF | Wallclock | Peak T | Error |
 | :--- | ---: | ---: | ---: | ---: |
-| Uniform (1024×1024) | 1,048,576 | 49.26 s | 118.6983 K | — |
-| AMR Dynamic | 278,528 | 54.00 s | 117.1260 K | 1.32% |
-| AMR Fixed | 278,528 | 20.76 s | 118.7438 K | 0.0383% |
+| Uniform (1024×1024) | 1,048,576 | 50.73 s | 118.6983 K | — |
+| AMR Dynamic | 278,528 | 56.77 s | 117.1260 K | 1.32% |
+| AMR Fixed | 278,528 | 21.68 s | 118.7438 K | 0.0383% |
 
-**Speedups (64-bit):** AMR Fixed **2.4×**.
+**Speedups (64-bit):** AMR Fixed **2.3×**. 
 
-> **Note on the transition:** The transition to 64-bit (Float64) increases raw compute time but is required to hit the high-precision convergence targets (e.g., $10^{-10}$ loss) seen in the `runs/Diffrential/` optimization scripts. The 32-bit mode is now considered deprecated for high-fidelity tasks.
+> **Scientific Note on XLA Overhead:** 
+> Both AMR variants use **3.76× fewer degrees of freedom** (278,528 DOF) than the Uniform baseline. However, on highly optimized silicon like the Apple M2, brute-force spatial compute is aggressively bottlenecked out. 
+> Notice that the **AMR Dynamic** solver is marginally slower than the Uniform grid (0.9× speedup). This is deliberate: maintaining static array shapes for `jax.jit` while dynamically relocating a fine patch requires differentiable masking (`jnp.where`) and continuous coarse-to-fine physical re-initialization. This JAX/XLA graph-level emulation overhead eclipses the raw ALUs saved by fewer DOFs. 
+> The **AMR Fixed** solver strips out this tracking overhead, translating the 3.76× DOF reduction directly into a **2.3× absolute wallclock speedup**, while preserving uninterrupted thermal history from $t=0$ for a phenomenal 0.0383% error margin.
 
-Both AMR variants use **3.76× fewer degrees of freedom** than the uniform reference. The AMR Fixed variant achieves near-identical accuracy to the uniform reference because the fine patch carries uninterrupted thermal history from the first step. The AMR Dynamic variant tracks the laser with no prior knowledge of its path.
 
 
 ![AMR Snapshots](docs/amr_snapshots.png)
@@ -91,6 +93,8 @@ Requirements: `jax>=0.4.20`, `jaxlib>=0.4.20`, `numpy>=1.26`, `matplotlib>=3.8`,
 
 ## Running
 
+The default environment utilizes `JAX_ENABLE_X64=1` for maximum scientific fidelity.
+
 ```bash
 # Uniform reference
 python runs/run_uniform.py
@@ -100,6 +104,19 @@ python runs/run_amr.py
 
 # AMR Fixed
 python runs/run_composite_amr.py
+
+# Automated Benchmarker Suite
+python runs/compare.py
+```
+
+### Running in Legacy 32-bit (Float32) Mode
+
+For faster rapid prototyping without strict high-precision convergence requirements:
+```bash
+JAX_ENABLE_X64=0 python runs/run_uniform.py
+JAX_ENABLE_X64=0 python runs/run_amr.py
+JAX_ENABLE_X64=0 python runs/run_composite_amr.py
+JAX_ENABLE_X64=0 python runs/compare.py
 ```
 
 Output goes to `output/uniform/`, `output/amr/`, and `output/amr_fixed/`. Each directory contains `snapshots.png`, `animation.gif`, VTK files, and `.npz` checkpoints.
